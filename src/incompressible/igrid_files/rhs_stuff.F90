@@ -140,6 +140,9 @@
        if (allocated(this%scalars)) then
            do sclr = 1,size(this%scalars)
                deviationC = this%scalars(sclr)%Fhat
+               if (this%spectC%carryingZeroK) then
+                   deviationC(1,1,:) = cmplx(zero,zero,rkind)
+               end if
                this%scalars(sclr)%rhs = this%scalars(sclr)%rhs - (this%RdampC/this%dt)*deviationC
            end do
        end if
@@ -536,14 +539,8 @@
            case(3)
                do sclr = 1,size(this%scalars)
                    if ((this%scalars(sclr)%amIactive()) .and. (sclr .ne. this%moistureIndex)) then
-                       ! Interpolate Fhat to edge
-                       call transpose_y_to_z(this%scalars(sclr)%Fhat,this%cbuffzC(:,:,:,1),this%sp_gpC)
-                       call this%Pade6opZ%interpz_C2E(this%cbuffzC(:,:,:,1),this%cbuffzE(:,:,:,1),&
-                         this%scalars(sclr)%bc_bottom,this%scalars(sclr)%bc_top)
-                       call transpose_z_to_y(this%cbuffzE(:,:,:,1),fT1E,this%sp_gpE)
-
                        ! Update the vertical velocity
-                       fT1E = (fT1E)*this%scalars(sclr)%get_buoyancyFact()
+                       fT1E = (this%scalars(sclr)%FEhat)*this%scalars(sclr)%get_buoyancyFact()
                        if (this%spectE%carryingZeroK) then
                            fT1E(1,1,:) = cmplx(zero,zero,rkind)
                        end if 

@@ -38,7 +38,7 @@
           end if
        end if 
      
-       ! Step 4: Buoyance + Sponge (inside Buoyancy)
+       ! Step 4: Buoyance
        call this%addBuoyancyTerm(this%u_rhs, this%v_rhs, this%w_rhs)
        
        if (present(CopyForDNSpress)) then
@@ -250,6 +250,13 @@
              this%dt,this%padepoiss, this%u_rhs, this%v_rhs, this%w_rhs, this%T_rhs)!, this%scalars)
        end if 
 
+       ! Step 10: Populate RHS for scalars
+       if (allocated(this%scalars)) then
+           do idx = 1,this%n_scalars
+              call this%scalars(idx)%populateRHS(this%dt,this%spectForceLayer)
+           end do 
+       end if
+
        ! Step 8: Fringe and sponge source terms
        if (this%useSponge) then
            call this%addSponge()
@@ -289,14 +296,6 @@
                          this%w_rhs, this%u, this%v, this%newTimeStep, this%angleHubHeight, this%wFilt, this%deltaGalpha, this%zHubIndex, this%angleTrigger)
            this%totalAngle = this%totalAngle + this%angleHubHeight
        end if 
-
-       ! Step 10: Populate RHS for scalars
-       !if (allocated(this%scalars)) then
-       if (this%useScalars) then
-           do idx = 1,this%n_scalars
-              call this%scalars(idx)%populateRHS(this%dt,this%spectForceLayer)
-           end do 
-       end if
 
        ! Step 11: Add statified forcing 
        if (this%isStratified .and. this%useforcedStratification) then

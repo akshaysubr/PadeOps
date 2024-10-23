@@ -1706,7 +1706,7 @@ contains
            end select
            call message(2,"BuoyancyFact:",this%BuoyancyFact)
 
-           call this%sgsModel%set_BuoyancyFactor(this%BuoyancyFact)
+           if (this%useSGS) call this%sgsModel%set_BuoyancyFactor(this%BuoyancyFact)
        elseif (this%initSpinup) then
             this%BuoyancyFact = one/(this%Fr*this%Fr*this%ThetaRef)
             call this%sgsModel%set_BuoyancyFactor(this%BuoyancyFact)
@@ -1749,10 +1749,13 @@ contains
                            & this%runID, useRestartFile, restartfile_TID, this%usefringe, this%usedoublefringex, &
                            & this%fringe_x, this%fringe_x1, this%fringe_x2, this%Pade6opZ)
               ! User safe-guard against using AMD SGS model with active scalars (SGS model logic needs to be modified)
-              if (this%sgsmodel%get_model_ID() == AMD_ID .and. this%scalars(idx)%amIactive()) then
-                  call assert(.false.,'AMD SGS model does not support active scalars at this time')
+              if (this%useSGS) then
+                  if (this%sgsmodel%get_model_ID() == AMD_ID .and. this%scalars(idx)%amIactive()) then
+                      call assert(.false.,'AMD SGS model does not support active scalars at this time')
+                  end if
               end if
            end do 
+           call this%interp_PrimitiveVars()
            call message(0, "SCALAR fields initialized successfully.")
        end if  
          

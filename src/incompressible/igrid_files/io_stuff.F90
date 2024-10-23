@@ -197,7 +197,7 @@
        use exits, only: message
        class(igrid), intent(in) :: this
        character(len=clen) :: tempname, fname
-       real(rkind), dimension(:,:,:), intent(in) :: arr
+       complex(rkind), dimension(:,:,:), intent(in) :: arr
        character(len=4), intent(in) :: label
        type(decomp_info), intent(in), optional :: gp2use
 

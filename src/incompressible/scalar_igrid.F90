@@ -9,6 +9,7 @@ module scalar_igridMod
    use fringeMethod, only: fringe 
    use spectralForcingLayerMod, only: SpectForcingLayer
    use basic_io, only: check_file_existence
+   use fortran_assert, only: assert
    !use io_hdf5_stuff, only: io_hdf5 
    implicit none
    
@@ -27,9 +28,11 @@ module scalar_igridMod
       real(rkind), dimension(:,:,:), allocatable, public :: F, FE, dFdt
       complex(rkind), dimension(:,:,:), pointer, public :: Fhat
       complex(rkind), dimension(:,:,:), allocatable, public :: FEhat
+      real(rkind), public :: FsurfTop, FsurfBot, dFsurf_dt
 
       real(rkind), dimension(:,:,:), allocatable, public :: d2Fdz2, dFdxC, dFdyC, dFdzC
-      real(rkind), dimension(:,:,:), allocatable :: dfdzE
+      real(rkind), dimension(:,:,:), allocatable :: dFdzE
+      complex(rkind), dimension(:,:,:), allocatable :: dFdzHC, dFdzH
       real(rkind), dimension(:,:,:), allocatable, public :: q1, q2, q3, q3C, kappaSGS, kappa_bounding
       
       complex(rkind), dimension(:,:,:), allocatable, public :: source_hat
@@ -76,7 +79,9 @@ module scalar_igridMod
          procedure :: dumpRestart
          procedure :: readRestart
          procedure :: dump_planes
-         procedure :: dumpScalarField
+         procedure, private :: dumpScalarField_real
+         procedure, private :: dumpScalarField_complex
+         generic            :: dumpScalarField => dumpScalarField_real, dumpScalarField_complex
          procedure :: amIactive
          procedure :: get_buoyancyFact
    end type 
@@ -212,6 +217,8 @@ subroutine destroy(this)
    if (allocated(this%FE)) deallocate(this%FE)
    if (allocated(this%FEhat)) deallocate(this%FEhat)
    if (allocated(this%Sfields)) deallocate(this%Sfields)
+   if (allocated(this%dFdzH)) deallocate(this%dFdzH)
+   if (allocated(this%dFdzHC)) deallocate(this%dFdzHC)
 
    if (allocated(this%source_hat)) deallocate(this%source_hat)
    if (allocated(this%d2Fdz2)) deallocate(this%d2Fdz2)
@@ -357,12 +364,14 @@ subroutine init(this,gpC,gpE,spectC,spectE,sgsmodel,der,inputFile, inputDir,mesh
    allocate(this%F   (gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%dFdt(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%FE  (gpE%xsz(1),gpE%xsz(2),gpE%xsz(3)))
-   allocate(this%FEhat(this%sp_gpE%ysz(1),this%sp_gpE%ysz(2),this%sp_gpE%zsz(3)))
+   allocate(this%FEhat(this%sp_gpE%ysz(1),this%sp_gpE%ysz(2),this%sp_gpE%ysz(3)))
 
    allocate(this%dFdxC(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%dFdyC(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%dFdzC(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%dFdzE(gpE%xsz(1),gpE%xsz(2),gpE%xsz(3)))
+   allocate(this%dFdzH( this%sp_gpE%ysz(1),this%sp_gpE%ysz(2),this%sp_gpE%ysz(3)))
+   allocate(this%dFdzHC(this%sp_gpC%ysz(1),this%sp_gpC%ysz(2),this%sp_gpC%ysz(3)))
 
    allocate(this%q1(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
    allocate(this%q2(gpC%xsz(1),gpC%xsz(2),gpC%xsz(3)))
@@ -403,27 +412,59 @@ subroutine init(this,gpC,gpE,spectC,spectE,sgsmodel,der,inputFile, inputDir,mesh
       call this%spectC%fft(this%rbuffxC(:,:,:,1),this%source_hat)
    end if
 
+   ! Set Dirichlet boundary conditions
+   if (bc_bottom == 0) then
+       call setDirichletBC_Temp(inputfile, this%F, this%FsurfBot, this%dFsurf_dt, 'bot')
+       if (abs(this%dFsurf_dt) > 1.e-14) call assert(.false.,'Time-dependent BCs are not supported')
+   else
+       call assert((.not. this%isActive),'Only Dirichlet BCs are supported for active scalars')
+   end if
+   if (bc_top == 0) then
+       call setDirichletBC_Temp(inputfile, this%F, this%FsurfTop, this%dFsurf_dt, 'top')
+       if (abs(this%dFsurf_dt) > 1.e-14) call assert(.false.,'Time-dependent BCs are not supported')
+   else
+       call assert((.not. this%isActive),'Only Dirichlet BCs are supported for active scalars')
+   end if
+
    call this%dealias()
    call this%prep_scalar()
 end subroutine
 
 subroutine get_derivatives(this)
    class(scalar_igrid), intent(inout) :: this
-   
-   call transpose_x_to_y(this%F, this%rbuffyC(:,:,:,1), this%gpC)
-   call transpose_y_to_z(this%rbuffyC(:,:,:,1),this%rbuffzC(:,:,:,1), this%gpC)
-   call this%der%ddz_C2E(this%rbuffzC(:,:,:,1),this%rbuffzE(:,:,:,1), this%bc_bottom, this%bc_top)
-   call transpose_z_to_y(this%rbuffzE(:,:,:,1), this%rbuffyE(:,:,:,1), this%gpE)
-   call transpose_y_to_x(this%rbuffyE(:,:,:,1), this%dFdzE, this%gpE)
+   complex(rkind), dimension(:,:,:), pointer :: ctmpz1, ctmpz2, ctmpz3
+   complex(rkind), dimension(:,:,:), pointer :: ctmpy1
 
-   call this%der%interpz_C2E(this%rbuffzC(:,:,:,1),this%rbuffzE(:,:,:,2), this%bc_bottom, this%bc_top)
-   call this%der%ddz_E2C(this%rbuffzE(:,:,:,2),this%rbuffzC(:,:,:,2), this%bc_bottom, this%bc_top)
+   ctmpz1 => this%cbuffzC(:,:,:,1); ctmpz2 => this%cbuffzE(:,:,:,1); 
+   ctmpy1 => this%cbuffyC(:,:,:,1); ctmpz3 => this%cbuffzC(:,:,:,2)
    
+   !call transpose_x_to_y(this%F, this%rbuffyC(:,:,:,1), this%gpC)
+   !call transpose_y_to_z(this%rbuffyC(:,:,:,1),this%rbuffzC(:,:,:,1), this%gpC)
+   !call this%der%ddz_C2E(this%rbuffzC(:,:,:,1),this%rbuffzE(:,:,:,1), this%bc_bottom, this%bc_top)
    !call transpose_z_to_y(this%rbuffzE(:,:,:,1), this%rbuffyE(:,:,:,1), this%gpE)
    !call transpose_y_to_x(this%rbuffyE(:,:,:,1), this%dFdzE, this%gpE)
 
-   call transpose_z_to_y(this%rbuffzC(:,:,:,2), this%rbuffyC(:,:,:,2), this%gpC)
-   call transpose_y_to_x(this%rbuffyC(:,:,:,2), this%dFdzC, this%gpC)
+   !call this%der%interpz_C2E(this%rbuffzC(:,:,:,1),this%rbuffzE(:,:,:,2), this%bc_bottom, this%bc_top)
+   !call this%der%ddz_E2C(this%rbuffzE(:,:,:,2),this%rbuffzC(:,:,:,2), this%bc_bottom, this%bc_top)
+   !
+   !!call transpose_z_to_y(this%rbuffzE(:,:,:,1), this%rbuffyE(:,:,:,1), this%gpE)
+   !!call transpose_y_to_x(this%rbuffyE(:,:,:,1), this%dFdzE, this%gpE)
+
+   !call transpose_z_to_y(this%rbuffzC(:,:,:,2), this%rbuffyC(:,:,:,2), this%gpC)
+   !call transpose_y_to_x(this%rbuffyC(:,:,:,2), this%dFdzC, this%gpC)
+
+   ! Get dTdzC from TE
+   call transpose_y_to_z(this%FEhat, ctmpz2, this%sp_gpE)
+   call this%Pade6opZ%ddz_E2C(ctmpz2,ctmpz1,this%BC_bottom,this%BC_top)
+   call transpose_z_to_y(ctmpz1,this%dFdzHC,this%sp_gpC)
+
+   ! Get dTdzE from TC to preserve the Nyquist wavenumber
+   call transpose_y_to_z(this%Fhat,ctmpz1,this%sp_gpC)
+   call this%Pade6opZ%ddz_C2E(ctmpz1,ctmpz2,this%BC_bottom,this%BC_top)
+   call transpose_z_to_y(ctmpz2,this%dFdzH,this%sp_gpE)
+
+   call this%spectE%ifft(this%dFdzH,this%dFdzE)
+   call this%spectC%ifft(this%dFdzHC,this%dFdzC)
    
    call this%spectC%mtimes_ik1_oop(this%Fhat, this%cbuffyC(:,:,:,1))
    call this%spectC%ifft(this%cbuffyC(:,:,:,1),this%dFdxC)
@@ -432,7 +473,8 @@ subroutine get_derivatives(this)
    call this%spectC%ifft(this%cbuffyC(:,:,:,1),this%dFdyC)
 
    if ((.not. this%isInviscid) .and. (.not. this%useSGS)) then
-      call this%der%d2dz2_C2C(this%rbuffzC(:,:,:,1), this%rbuffzC(:,:,:,2), this%bc_bottom, this%bc_top)
+      !call this%der%d2dz2_C2C(this%rbuffzC(:,:,:,1), this%rbuffzC(:,:,:,2), this%bc_bottom, this%bc_top)
+      call this%der%ddz_E2C(this%rbuffzE(:,:,:,1),this%rbuffzC(:,:,:,2), this%bc_bottom, this%bc_top)
       call transpose_z_to_y(this%rbuffzC(:,:,:,2), this%rbuffyC(:,:,:,2), this%gpC)
       call transpose_y_to_x(this%rbuffyC(:,:,:,2), this%d2Fdz2, this%gpC)
    end if
@@ -495,14 +537,14 @@ subroutine dump_planes(this, tid, pid, dirid, dirlabel)
 
 end subroutine
 
-subroutine dumpScalarField(this, tid, dump_kappaSGS)!, viz_hdf5 )
+subroutine dumpScalarField_real(this, tid, dump_kappaSGS)!, viz_hdf5 )
    use decomp_2d_io
    class(scalar_igrid), intent(in) :: this
    integer, intent(in) :: tid
    logical, intent(in) :: dump_kappaSGS
    character(len=clen) :: tempname, fname
    !type(io_hdf5), intent(inout), optional :: viz_hdf5
-   character(len=4) :: scalar_label
+   !character(len=4) :: scalar_label
 
   ! if (present(viz_hdf5)) then
   !    write(scalar_label,"(A2,I2.2)") "sc", this%scalar_number
@@ -521,6 +563,24 @@ subroutine dumpScalarField(this, tid, dump_kappaSGS)!, viz_hdf5 )
               call decomp_2d_write_one(1,this%kappa_bounding,fname, this%gpC)
           end if
       end if
+  ! end if 
+
+end subroutine
+subroutine dumpScalarField_complex(this, tid)!, viz_hdf5 )
+   use decomp_2d_io
+   class(scalar_igrid), intent(in) :: this
+   integer, intent(in) :: tid
+   character(len=clen) :: tempname, fname
+   !type(io_hdf5), intent(inout), optional :: viz_hdf5
+   !character(len=4) :: scalar_label
+
+  ! if (present(viz_hdf5)) then
+  !    write(scalar_label,"(A2,I2.2)") "sc", this%scalar_number
+  !    call viz_hdf5%write_variable(this%F, scalar_label)
+  ! else
+      write(tempname,"(A3,I2.2,A5,I2.2,A2,I6.6,A4)") "Run", this%RunID, "_Fhat",this%scalar_number,"_t",tid,".out" 
+      fname = this%OutputDataDir(:len_trim(this%OutputDataDir))//"/"//trim(tempname)
+      call decomp_2d_write_one(2,this%Fhat,fname, this%sp_gpC)
   ! end if 
 
 end subroutine

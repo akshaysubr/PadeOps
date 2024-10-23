@@ -360,6 +360,18 @@ subroutine interp_PrimitiveVars(this)
         do sclr = 1,size(this%scalars)
             call transpose_y_to_z(this%scalars(sclr)%Fhat,zbuffC,this%sp_gpC)
             call this%Pade6opZ%interpz_C2E(zbuffC,zbuffE,this%scalars(sclr)%BC_bottom, this%scalars(sclr)%BC_top)
+            if (this%scalars(sclr)%BC_bottom == 0)  then
+                zbuffE(:,:,1) = zero 
+                if (nrank == 0) then
+                    zbuffE(1,1,1) = this%scalars(sclr)%FsurfBot*real(this%nx,rkind)*real(this%ny,rkind)
+                end if 
+            end if
+            if (this%scalars(sclr)%BC_top == 0) then
+                zbuffE(:,:,this%nz+1) = zero 
+                if (nrank == 0) then
+                    zbuffE(1,1,this%nz+1) = this%scalars(sclr)%FsurfTop*real(this%nx,rkind)*real(this%ny,rkind)
+                end if 
+            end if
             call transpose_z_to_y(zbuffE,this%scalars(sclr)%FEhat,this%sp_gpE)
             call this%spectE%ifft(this%scalars(sclr)%FEhat,this%scalars(sclr)%FE)
         end do
