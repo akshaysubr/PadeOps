@@ -61,6 +61,9 @@ module scalar_igridMod
       logical :: useSource, isinviscid, useSGS, usefringe, usedoublefringe
       type(Pade6Stagg), pointer :: Pade6opZ
 
+      ! For the spatially localized forcing layer
+      real(rkind) :: Ftgt
+
       ! If using active scalars
       logical :: isActive
       real(rkind) :: buoyancyFact
@@ -200,7 +203,7 @@ subroutine populateRHS(this, dt, spect_force_layer)
 
    ! Add forcing layer contribution
    if (allocated(spect_force_layer)) then
-       call spect_force_layer%updateScalarRHS(this%F,dt,this%rhs)
+       call spect_force_layer%updateScalarRHS(this%F,dt,this%rhs,this%Ftgt)
    end if
 
    ! To be consistent with the primitive variables, the sponge is added in the igrid class (if a sponge is used)
@@ -266,11 +269,11 @@ subroutine init(this,gpC,gpE,spectC,spectE,sgsmodel,der,inputFile, inputDir,mesh
    character(len=clen) :: tempname, fname
    real(rkind) :: lowbound = 0.d0, highbound = 1.d0
    logical :: isActive = .false.
-   real(rkind) :: buoyancyFact = 0.d0
+   real(rkind) :: buoyancyFact = 0.d0, Ftgt = 1.d0
 
 
    namelist /SCALAR_INFO/ useSource, PrandtlNum, bc_bottom, bc_top,TurbPrandtlNum, Cy, RejectScalarRestart, lowbound, highbound,&
-     isActive, buoyancyFact
+     isActive, buoyancyFact, Ftgt
 
    
    this%InputDataDir = InputDataDir

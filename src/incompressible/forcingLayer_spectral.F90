@@ -433,20 +433,20 @@ module spectralForcingLayerMod
           vrhs = vrhs + this%ampFact_y*this%fyhat
           wrhs = wrhs + this%ampFact_z*this%fzhat
 
-          if (this%isStratified) call this%updateScalarRHS(T,dt,Trhs)
+          if (this%isStratified) call this%updateScalarRHS(T,dt,Trhs,this%Ttgt)
           ! NOTE: if using passive scalars, "updateScalarRHS()" is
           ! used in the scalar_igrid.F90 module and so should not be called here
       end subroutine
 
-      subroutine updateScalarRHS(this,T,dt,Trhs)
+      subroutine updateScalarRHS(this,T,dt,Trhs,Ttgt)
           class(spectForcingLayer), intent(inout) :: this
           real(rkind), dimension(:,:,:), intent(in) :: T
-          real(rkind), intent(in) :: dt
+          real(rkind), intent(in) :: dt, Ttgt
           complex(rkind), dimension(:,:,:), intent(inout) :: Trhs
 
           if (dt > 0.d0) then
               ! Penalty term
-              this%fT = this%rmaskC*this%lambda/dt*(this%Ttgt - T)
+              this%fT = this%rmaskC*this%lambda/dt*(Ttgt - T)
               call this%spectC%fft(this%fT,this%fThat)
               Trhs = Trhs + this%fThat
           end if
