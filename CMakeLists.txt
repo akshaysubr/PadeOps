@@ -5,6 +5,16 @@ enable_language(Fortran)
 
 set( CMAKE_MODULE_PATH ${PadeOps_SOURCE_DIR} )
 
+OPTION(FARMSHARE "compile on FarmShare" OFF)
+
+# This step is to set Intel MKL on FarmShare
+set(INTEL_MKL_FLAG -qmkl)
+if (${FARMSHARE})
+    message(STATUS "Compile on FarmShare with Intel Parallel Studio XE 2017!!!!!")
+    set(INTEL_MKL_FLAG -mkl)
+endif()
+#
+
 if (NOT CMAKE_BUILD_TYPE)
     message(STATUS "No build type selected, default to Release")
     set(CMAKE_BUILD_TYPE "Release")
@@ -48,13 +58,13 @@ if ( CMAKE_Fortran_COMPILER_ID MATCHES "Intel" )
 	else()
 	    set(OPTFLAG $ENV{ARCH_OPT_FLAG})
 	endif()
-        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O3 -traceback -qmkl -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp")
+        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O3 -traceback ${INTEL_MKL_FLAG} -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp")
     elseif ( CMAKE_BUILD_TYPE MATCHES "Debug" )
-        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O0 -traceback -g -qmkl -heap-arrays 1024 -check bounds -check noarg-temp-created -fpe0 -warn -traceback -debug extended -assume realloc_lhs -fstack-protector -assume protect_parens -implicitnone")
+        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O0 -traceback -g ${INTEL_MKL_FLAG} -heap-arrays 1024 -check bounds -check noarg-temp-created -fpe0 -warn -traceback -debug extended -assume realloc_lhs -fstack-protector -assume protect_parens -implicitnone")
     elseif ( CMAKE_BUILD_TYPE MATCHES "Profile" )
-        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O3 -traceback -qmkl -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp -pg -g")
+        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O3 -traceback ${INTEL_MKL_FLAG} -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp -pg -g")
     elseif ( CMAKE_BUILD_TYPE MATCHES "O2" )
-        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O2 -traceback -qmkl -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp")
+        set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -O2 -traceback ${INTEL_MKL_FLAG} -heap-arrays 1024 -warn all ${OPTFLAG} -dynamic -qopt-report=2 -qopt-report-phase=vec -qopenmp")
     endif()
 
 # GNU compiler on OSX
