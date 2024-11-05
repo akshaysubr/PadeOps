@@ -31,21 +31,24 @@ module GridMod
         character(len=clen)                                  :: filter_y          ! What filter to use in X: "cf90", "gaussian", "lstsq", "spectral" 
         character(len=clen)                                  :: filter_z          ! What filter to use in X: "cf90", "gaussian", "lstsq", "spectral" 
 
-        character(len=clen)                                  :: outputdir         ! Directory for output files
+        character(len=clen)                                  :: outputdir,inputdir         ! Directory for output files
 
         type( decomp_info ), allocatable                     :: decomp
 
         real(rkind), dimension(:,:,:,:), allocatable         :: mesh
         real(rkind), dimension(:,:,:,:), allocatable         :: fields
         real(rkind)                                          :: tstop, dt, dtfixed, tsim, CFL
-        integer                                              :: step, nsteps
+        integer                                              :: step, nsteps,numviz
         integer                                              :: nxp, nyp, nzp
 
-        integer                                              :: t_dataDump, t_restartDump
         
         integer, dimension(2)                                :: x_bc = [0,0]       ! X boundary (0=standard, 1=symmetric,-1=antisymmetric)
         integer, dimension(2)                                :: y_bc = [0,0]       ! Y boundary (0=standard, 1=symmetric,-1=antisymmetric)
         integer, dimension(2)                                :: z_bc = [0,0]       ! Z boundary (0=standard, 1=symmetric,-1=antisymmetric)
+
+        integer                                              :: runID, t_dataDump, t_restartDump
+        integer                                              :: restartFile_TID, ioType, restartFile_RID
+        logical                                              :: useRestartFile
 
         logical                                              :: SkewSymm 
         logical                                              :: ViscConsrv         ! Is the viscous term being computed using the conservative formulation? 

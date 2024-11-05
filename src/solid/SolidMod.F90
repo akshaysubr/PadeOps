@@ -4803,6 +4803,8 @@ contains
 
     subroutine getRHS_Ys_intSharp(this,rho,u,v,w,rhsYs,periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
         use operators, only: divergence,gradient,divergenceFV,interpolateFV,interpolateFV_x, interpolateFV_y,interpolateFV_z
+        use reductions, only: P_MAXVAL, P_MINVAL
+        use decomp_2d,  only: nrank
         class(solid),                                         intent(inout)  :: this
         real(rkind), dimension(this%nxp,this%nyp,this%nzp),   intent(in)  :: rho,u,v,w
         real(rkind), dimension(this%nxp,this%nyp,this%nzp),   intent(out) :: rhsYs
@@ -4811,6 +4813,7 @@ contains
         real(rkind), dimension(this%nxp,this%nyp,this%nzp)    :: tmp,tmp1, tmp2,tmp3,u_int,v_int,w_int,dYdx,dYdy,dYdz
         real(rkind), dimension(this%nxp,this%nyp,this%nzp,3)  :: Ys_int,rho_int, rhoYs_int, rhodiff_int
         real(rkind), dimension(this%nxp,this%nyp,this%nzp) :: dYdx_x,dYdy_y,dYdz_z
+        real(rkind) :: tmp_min, int_min, lad_min
         if(.NOT. this%use_Stagg) then
 
 
@@ -4893,6 +4896,11 @@ contains
            endif
 
            rhsYs = tmp + this%intSharp_RFV + this%YsLAD !+ this%intSharp_RDiffFV
+
+       !    tmp_min = P_MINVAL(tmp)
+       !    int_min = P_MINVAL(this%intSharp_RFV)
+       !    lad_min = P_MINVAL(this%YsLAD)
+       !    if (nrank.eq.0) print*,tmp_min,int_min, lad_min
            this%u_int = u_int
            this%v_int = v_int
            this%w_int = w_int

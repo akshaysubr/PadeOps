@@ -42,6 +42,28 @@ module sgrid_hooks
         end subroutine 
     end interface
 
+        interface initparam_restart
+        subroutine initparam_restart(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fields,mix,tstop,dt,tviz,periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
+            import :: rkind
+            import :: decomp_info
+            import :: solid_mixture
+            import :: derivatives
+            import :: derivativesStagg
+            import :: interpolators
+            type(decomp_info),               intent(in)    :: decomp
+            type(derivatives),               intent(in)    :: der
+            type(derivativesStagg),          intent(in)    :: derStagg
+            type(interpolators),             intent(in)    :: interpMid
+            real(rkind),                     intent(in)    :: dx, dy, dz
+            character(len=*),                intent(in)    :: inputfile
+            real(rkind), dimension(:,:,:,:), intent(in)    :: mesh
+            real(rkind), dimension(:,:,:,:), intent(inout) :: fields
+            type(solid_mixture),             intent(inout) :: mix
+            real(rkind),                     intent(inout) :: tstop, dt, tviz
+            integer, dimension(2), optional, intent(in) :: x_bc, y_bc, z_bc
+            logical :: periodicx,periodicy,periodicz
+        end subroutine
+    end interface
 
     interface hook_output
         ! subroutine hook_output(decomp,dx,dy,dz,outputdir,mesh,fields,mix,tsim,vizcount)

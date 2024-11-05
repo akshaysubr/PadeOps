@@ -1,4 +1,4 @@
-module ShearLayer4Mode_data
+module ShearLayerComp_data
     use kind_parameters,  only: rkind
     use constants,        only: one,two,eight,three,six,sixth,zero, pi
     use FiltersMod,       only: filters
@@ -135,7 +135,7 @@ subroutine meshgen(decomp, dx, dy, dz, mesh)
     use decomp_2d,        only: decomp_info
     use exits,            only: warning
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
 
@@ -148,9 +148,6 @@ subroutine meshgen(decomp, dx, dy, dz, mesh)
 
     nx = decomp%xsz(1); ny = decomp%ysz(2); nz = decomp%zsz(3)
 
-    print *, " nx meshgen ", nx
-    print *, " ny meshgen ", ny
-    print *, " nz meshgen ", nz
     ! If base decomposition is in Y
     ix1 = decomp%yst(1); iy1 = decomp%yst(2); iz1 = decomp%yst(3)
     ixn = decomp%yen(1); iyn = decomp%yen(2); izn = decomp%yen(3)
@@ -196,7 +193,7 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
     use DerivativesStaggeredMod, only: derivativesStagg
     use InterpolatorsMod,        only: interpolators
     use reductions,       only: P_SUM, P_MEAN, P_MAXVAL, P_MINVAL 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     character(len=*),                intent(in)    :: inputfile
@@ -216,7 +213,7 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
     real(rkind), dimension(decomp%ysz(1),decomp%ysz(2),decomp%ysz(3)) :: tmp, dum, eta, eta2, yphys, u_perturb, KE
     real(rkind), dimension(decomp%ysz(1),decomp%ysz(2)) :: v_perturb
     real(rkind), dimension(decomp%ysz(2),5) :: phi_i,phi_r, p_perturbr, p_perturbi, Dphi_i, Dphi_r
-    real(rkind), dimension(decomp%ysz(2),2,5) :: p_disturb, rho_disturb
+    real(rkind), dimension(decomp%ysz(2),2,5) :: p_disturb,rho_disturb,m1_disturb,m2_disturb,vf_disturb
     real(rkind), dimension(decomp%ysz(1), decomp%ysz(2),decomp%ysz(3),4) :: phi_i3, phi_r3,phi_i_int, phi_r_int
     real(rkind), dimension(8) :: fparams
     real(rkind), dimension(4) :: alphai, phase
@@ -230,7 +227,7 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
     integer :: ierr, rank,fh, filesize, chunksize, offset, offset2,totalproc
     integer, allocatable :: data(:), recvbuf(:)
     character(len=50) :: filename,phiIname,phiRname, DphiIname, DphiRname
-    character(len=50) :: rhoRname, rhoIname, pIname,pRname
+    character(len=50) :: m1Rname, m1Iname, pIname,pRname,m2Rname,m2Iname,VFIname,VFRname
     !nteger(kind=MPI_OFFSET_KIND) :: disp
     !nteger(kind=MPI_STATUS_SIZE) :: status(MPI_STATUS_SIZE)
     logical :: flag
@@ -323,28 +320,36 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
            v = 0
            w = 0
 
-        print *, "read in files"
         phi_i = 0
         phi_r = 0
         do i = 1,4        
-             write(phiIname, '(A,I0,A)') 'alpha',i,'/Phi_I.txt'
-             write(phiRname, '(A,I0,A)') 'alpha',i,'/Phi_R.txt'
-             write(DphiIname, '(A,I0,A)') 'alpha',i,'/DPhi_I.txt'
-             write(DphiRname, '(A,I0,A)') 'alpha',i,'/DPhi_R.txt'
-             write(rhoIname, '(A,I0,A)') 'alpha',i,'/rho_I.txt'
-             write(rhoRname, '(A,I0,A)') 'alpha',i,'/rho_R.txt'
-             write(pIname, '(A,I0,A)') 'alpha',i,'/P_I.txt'
-             write(pRname, '(A,I0,A)') 'alpha',i,'/P_R.txt'
+             write(phiIname, '(A,I0,A)') 'alpha',i,'/v_I.txt'
+             write(phiRname, '(A,I0,A)') 'alpha',i,'/v_R.txt'
+             write(DphiIname, '(A,I0,A)') 'alpha',i,'/u_I.txt'
+             write(DphiRname, '(A,I0,A)') 'alpha',i,'/u_R.txt'
+             write(m1Iname, '(A,I0,A)') 'alpha',i,'/m1_I.txt'
+             write(m1Rname, '(A,I0,A)') 'alpha',i,'/m1_R.txt'
+             write(m2Iname, '(A,I0,A)') 'alpha',i,'/m2_I.txt'
+             write(m2Rname, '(A,I0,A)') 'alpha',i,'/m2_R.txt'
+             write(pIname, '(A,I0,A)') 'alpha',i,'/p_I.txt'
+             write(pRname, '(A,I0,A)') 'alpha',i,'/p_R.txt'
+             write(VFIname, '(A,I0,A)') 'alpha',i,'/VF_I.txt'
+             write(VFRname, '(A,I0,A)') 'alpha',i,'/VF_R.txt'
              open (unit=8, file=phiIname, status='old', action='read' )
              open (unit=12, file=phiRname, status='old', action='read' )
              open (unit=16, file=DphiIname, status='old', action='read' )
              open (unit=18, file=DphiRname, status='old', action='read' )
 
-             open (unit=20, file=rhoIname, status='old', action='read' )
-             open (unit=22, file=rhoRname, status='old', action='read' )
+             open (unit=20, file=m1Iname, status='old', action='read' )
+             open (unit=22, file=m1Rname, status='old', action='read' )
              open (unit=24, file=pIname, status='old', action='read' )
              open (unit=26, file=pRname, status='old', action='read' )
-              
+       
+             open (unit=28, file=m2Iname, status='old', action='read' )
+             open (unit=32, file=m2Rname, status='old', action='read' )
+             open (unit=34, file=VFIname, status='old', action='read' )
+             open (unit=36, file=VFRname, status='old', action='read' )
+       
 
               do j = 1,pointy
                 read(8,*) phi_i(j,i)
@@ -352,10 +357,17 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
                 read(16,*) Dphi_i(j,i)
                 read(18,*) Dphi_r(j,i)
 
-                read(20,*) rho_disturb(j,1,i)
-                read(22,*) rho_disturb(j,2,i)
+                read(20,*) m1_disturb(j,1,i)
+                read(22,*) m1_disturb(j,2,i)
                 read(24,*) p_disturb(j,1,i)
                 read(26,*) p_disturb(j,2,i)
+
+                read(28,*) m2_disturb(j,1,i)
+                read(32,*) m2_disturb(j,2,i)
+
+                read(34,*) vf_disturb(j,1,i)
+                read(36,*) vf_disturb(j,2,i)
+
               end do
 
               close(8)
@@ -366,38 +378,12 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
               close(22)
               close(24)
               close(26)
+              close(28)
+              close(32)
+              close(34)
+              close(36)
          end do
 
-         print *, "finished reading"
-!        open (unit=20, file="Phi_I_2.txt", status='old', action='read' )
-!        open (unit=22, file="Phi_R_2.txt", status='old', action='read' )
-!        open (unit=24, file="DPhi_I_2.txt", status='old', action='read' )
-!        open (unit=26, file="DPhi_R_2.txt", status='old', action='read' )
-
-!        open (unit=28, file="Phi_I_3.txt", status='old', action='read' )
-!        open (unit=30, file="Phi_R_3.txt", status='old', action='read' )
-!        open (unit=32, file="DPhi_I_3.txt", status='old', action='read' )
-!        open (unit=34, file="DPhi_R_3.txt", status='old', action='read' )
-
-!        open (unit=36, file="Phi_I_4.txt", status='old', action='read' )
-!        open (unit=38, file="Phi_R_4.txt", status='old', action='read' )
-!        open (unit=40, file="DPhi_I_4.txt", status='old', action='read' )
-!        open (unit=42, file="DPhi_R_4.txt", status='old', action='read' )
-
-!        open (unit=44, file="Phi_I_5.txt", status='old', action='read' )
-!        open (unit=46, file="Phi_R_5.txt", status='old', action='read' )
-!        open (unit=48, file="DPhi_I_5.txt", status='old', action='read' )
-!        open (unit=50, file="DPhi_R_5.txt", status='old', action='read' )
-
-!        open (unit=52, file="Phi_I_6.txt", status='old', action='read' )
-!        open (unit=54, file="Phi_R_6.txt", status='old', action='read' )
-!        open (unit=56, file="DPhi_I_6.txt", status='old', action='read' )
-!        open (unit=58, file="DPhi_R_6.txt", status='old', action='read' )
-
-!        open (unit=60, file="Phi_I_7.txt", status='old', action='read' )
-!        open (unit=62, file="Phi_R_7.txt", status='old', action='read' )
-!        open (unit=64, file="DPhi_I_7.txt", status='old', action='read' )
-!        open (unit=66, file="DPhi_R_7.txt", status='old', action='read' )
 
         do i = 1,4          
            alphai(i) = i/4.0
@@ -408,12 +394,11 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
 
         enddo
 
-        print *, "alpha = ", alphai(2)
 
-        phase(1) = -pi/2 ! pi/4 ! -pi/4
-        phase(2) = pi/2 !pi
-        phase(3) = pi/4 !-pi/4 !pi/4
-        phase(4) = -pi !-pi/2
+        phase(1) = 0 !pi/4 !-pi/2 ! pi/4 ! -pi/4
+        phase(2) = 0 !pi   !pi
+        phase(3) = 0 !-pi/4 !-pi/4 !pi/4
+        phase(4) = 0 !-pi/2 !-pi/2
 
         mix%material(1)%p  = p_amb
         tmp = (half ) * ( one - erf( (yphys)/(delta_rho) ) )
@@ -444,17 +429,16 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
         int_KE = P_SUM(KE/(nx*ny*nz))
         v = epsilonk*v !/sqrt(int_KE)
         u = u + epsilonk*u_perturb !/sqrt(int_KE)
-       ! do i = 1,pointy
-           
-       !    do j = 1,2
-       !     mix%material(1)%p(:,i,:) = mix%material(1)%p(:,i,:) + epsP*( p_disturb(i,2,j)*cos(alphai(j)*x(:,i,:)) - p_disturb(i,1,j)*sin(alphai(j)*x(:,i,:) ))/sqrt(int_KE)
+
+
+       do i = 1,pointy        
+          do j = 1,2
+              mix%material(1)%p(:,i,:) = mix%material(1)%p(:,i,:) + epsP*( p_disturb(i,2,j)*cos(alphai(j)*x(:,i,:)) - p_disturb(i,1,j)*sin(alphai(j)*x(:,i,:) ))
        !     print *, "p "
        !     mix%material(1)%VF(:,i,:) = mix%material(1)%VF(:,i,:) + epsRho*( rho_disturb(i,2,j)*cos(alphai(j)*x(:,i,:)) -  rho_disturb(i,1, j)*sin(alphai(j)*x(:,i,:) ))/sqrt(int_KE)
        !     print *, "VF"
-       !    enddo
-
-
-       ! enddo
+          enddo
+       enddo
 
         mix%material(2)%VF = 1 - mix%material(1)%VF
         !Set density profile and mass fraction based on volume fraction
@@ -498,7 +482,7 @@ subroutine get_sponge(decomp,dx,dy,dz,mesh,fields,mix,rhou,rhov,rhow,rhoe,sponge
     use decomp_2d,        only: decomp_info, nrank
     use exits,            only: GracefulExit
     use SolidMixtureMod,  only: solid_mixture
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -525,9 +509,7 @@ subroutine get_sponge(decomp,dx,dy,dz,mesh,fields,mix,rhou,rhov,rhow,rhoe,sponge
         nx = size(mesh,1); ny = size(mesh,2); nz = size(mesh,3)
         yphys = atanh(2.0*y /(1 + 1/STRETCH_RATIO))
         Lr    = 24.0/(yphys(1,ny,1) - yphys(1,1,1))
-        print *, "Lr"
         yphys = Lr*yphys
-        print *, "yphys"
       
 
         sigma1 = -80000 ! -2400 ! -80000
@@ -583,7 +565,7 @@ subroutine initparam_restart(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,me
     use DerivativesStaggeredMod, only: derivativesStagg
     use InterpolatorsMod,        only: interpolators
     use reductions,       only: P_SUM, P_MEAN, P_MAXVAL, P_MINVAL 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     character(len=*),                intent(in)    :: inputfile
@@ -719,7 +701,7 @@ subroutine hook_output(decomp,der,dx,dy,dz,outputdir,mesh,fields,mix,tsim,vizcou
     use operators,        only: curl
     use reductions,       only: P_SUM, P_MEAN, P_MAXVAL, P_MINVAL
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     character(len=*),                intent(in) :: outputdir
@@ -761,7 +743,7 @@ subroutine hook_output(decomp,der,dx,dy,dz,outputdir,mesh,fields,mix,tsim,vizcou
        end if
 
        if (decomp%ysz(2) == 1) then
-           write(outputfile,'(2A,I4.4,A)') trim(outputdir),"/ShearLayer4Mode_"//trim(str)//"_", vizcount, ".dat"
+           write(outputfile,'(2A,I4.4,A)') trim(outputdir),"/ShearLayerComp_"//trim(str)//"_", vizcount, ".dat"
 
            open(unit=outputunit, file=trim(outputfile), form='FORMATTED')
            write(outputunit,'(4ES27.16E3)') tsim, minVF, thick, rho_0_2/rho_0
@@ -819,7 +801,7 @@ subroutine hook_output(decomp,der,dx,dy,dz,outputdir,mesh,fields,mix,tsim,vizcou
        VFmin  = P_MINVAL(VFmin_proc)
        YsGrowth = xspike - xbubbl
        VFGrowth  = VFmax - VFmin   
-       write(outputfile,'(2A,I4.4,A)') trim(outputdir),"/ShearLayer4Mode_statistics.dat"
+       write(outputfile,'(2A,I4.4,A)') trim(outputdir),"/ShearLayerComp_statistics.dat"
 
        if (vizcount == 0) then
            open(unit=outputunit, file=trim(outputfile), form='FORMATTED', status='REPLACE')
@@ -860,7 +842,7 @@ subroutine hook_bc(decomp,mesh,fields,mix,tsim,x_bc,y_bc,z_bc)
     use SolidMixtureMod,  only: solid_mixture
     use operators,        only: filter3D
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -1052,7 +1034,7 @@ subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim)
     use reductions,       only: P_MAXVAL
     use SolidMixtureMod,  only: solid_mixture
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in) :: decomp
@@ -1090,7 +1072,7 @@ subroutine hook_mixture_source(decomp,mesh,fields,mix,tsim,rhs)
     use decomp_2d,        only: decomp_info
     use SolidMixtureMod,  only: solid_mixture
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -1116,7 +1098,7 @@ subroutine hook_material_g_source(decomp,hydro,elastic,x,y,z,tsim,rho,u,v,w,Ys,V
     use StiffGasEOS,      only: stiffgas
     use Sep1SolidEOS,     only: sep1solid
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -1136,7 +1118,7 @@ subroutine hook_material_mass_source(decomp,hydro,elastic,x,y,z,tsim,rho,u,v,w,Y
     use StiffGasEOS,      only: stiffgas
     use Sep1SolidEOS,     only: sep1solid
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -1156,7 +1138,7 @@ subroutine hook_material_energy_source(decomp,hydro,elastic,x,y,z,tsim,rho,u,v,w
     use StiffGasEOS,      only: stiffgas
     use Sep1SolidEOS,     only: sep1solid
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp
@@ -1176,7 +1158,7 @@ subroutine hook_material_VF_source(decomp,hydro,elastic,x,y,z,tsim,u,v,w,Ys,VF,p
     use StiffGasEOS,      only: stiffgas
     use Sep1SolidEOS,     only: sep1solid
 
-    use ShearLayer4Mode_data
+    use ShearLayerComp_data
 
     implicit none
     type(decomp_info),               intent(in)    :: decomp

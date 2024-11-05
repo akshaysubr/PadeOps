@@ -137,7 +137,7 @@ module SolidGrid
     integer, parameter :: nbufsx = 2
     integer, parameter :: nbufsy = 6
     integer, parameter :: nbufsz = 2
-
+ 
 
     type, extends(grid) :: sgrid
        
@@ -266,7 +266,6 @@ module SolidGrid
             procedure          :: simulate
             procedure          :: update_p
             procedure          :: getRHS_P
-            procedure          :: get_tauSum
             procedure          :: checkTau
             procedure, private :: get_dt
             procedure, private :: get_primitive
@@ -288,9 +287,10 @@ module SolidGrid
             procedure, private :: get_tau
             procedure, private :: get_tauStagg
             procedure, private :: get_q
-            procedure          :: get_qLAD
             procedure          :: coordinateTransform
             procedure          :: getFaces
+            procedure, private :: dumpRestartFile
+            procedure, private :: readRestartFile
     end type
 
 contains
@@ -360,7 +360,9 @@ contains
         real(rkind) :: phys_mu1 = 0.0d0, phys_mu2 =0.0d0,Ys_wiggle = 0d0,VF_wiggle = 0d0, uthick = 0, rhothick = 0, pthick = 0,VF_thick = 0, Ys_thick = 0
         real(rkind) :: phys_bulk1 = 0.0d0, phys_bulk2 =0.0d0
         real(rkind) :: phys_kap1 = 0.0d0, phys_kap2 =0.0d0
-
+        integer :: runID = 0,  t_dataDump = 99999, t_restartDump = 99999,numviz 
+        integer :: restartFile_TID = 1, ioType = 0, restartFile_RID =1
+        logical :: useRestartFile=.false.
         real(rkind) :: intSharp_gam = 0.0d0, intSharp_eps = 0.0d0, intSharp_cut = 1.0d-2, intSharp_dif = 1.0d1, intSharp_tnh = 1.0D-2, intSharp_pfloor = 0.0D0, intSharp_tfloor = 0.0D0, XiLS_eps = 0.0
 
         real(rkind) :: filter_alpha = 0.499
@@ -374,7 +376,10 @@ contains
                                      filter_x, filter_y, filter_z, &
                                                        prow, pcol, &
                                                          SkewSymm, &                                                      
-                                                     filter_alpha
+                                                     filter_alpha, &
+            numviz, useRestartFile, restartFile_TID, restartFile_RID
+ 
+        namelist /IO/ runID,t_restartDump, t_dataDump, ioType
 
         namelist /SINPUT/  gam, Rgas, PInf, shmod, &
                            useAkshayForm,twoPhaseLAD,LAD5eqn, useNC, PTeqb, pEqb, pRelax, SOSmodel, use_gTg, updateEtot, useOneG, intSharp, usePhiForm,intSharp_cpl, intSharp_cpg, intSharp_cpg_west, intSharp_spf, intSharp_ufv, intSharp_utw, intSharp_d02, intSharp_msk, intSharp_flt, intSharp_flp, intSharp_gam, intSharp_eps, intSharp_cut, intSharp_dif, intSharp_tnh, intSharp_pfloor, intSharp_tfloor, ns, Cmu, Cbeta, CbetaP, Ckap, CkapP,Cdiff, CY, Cvf1, Cvf2, Crho, Cdiff_g, Cdiff_gt, Cdiff_gp, Cdiff_pe, Cdiff_pe_2, &
@@ -386,13 +391,16 @@ contains
         ioUnit = 11
         open(unit=ioUnit, file=trim(inputfile), form='FORMATTED')
         read(unit=ioUnit, NML=INPUT)
+        read(unit=ioUnit, NML=IO)
         read(unit=ioUnit, NML=SINPUT)
         close(ioUnit)
+
 
 
         this%nx = nx
         this%ny = ny
         this%nz = nz
+
 
         this%Ys_wiggle = Ys_wiggle
         this%VF_wiggle = VF_wiggle
@@ -499,7 +507,16 @@ contains
         call get_decomp_info(this%decomp)
         ! Set all the attributes of the abstract grid type         
         this%outputdir = outputdir 
-        
+        this%useRestartFile = useRestartFile
+        this%restartFile_TID = restartFile_TID
+        this%restartFile_RID = restartFILE_RID
+        this%t_restartDump   = t_restartDump
+        this%t_dataDump      = t_dataDump
+        this%ioType          = ioType
+        this%runID           = runID
+        this%inputdir        = inputdir
+        this%numviz          = numviz
+
         this%periodicx = periodicx
         this%periodicy = periodicy
         this%periodicz = periodicz
@@ -966,20 +983,34 @@ contains
         ! Initialize everything to a constant Zero
         this%fields = zero  
 
-        print *, "initfields before"
         ! Go to hooks if a different initialization is derired (Set mixture p, Ys, VF, u, v, w, rho)
-        call initfields(this%decomp,this%der,this%derStagg, this%interpMid, this%dx, this%dy, this%dz, inputfile, this%mesh, this%fields, &
-                        this%mix, this%tstop, this%dtfixed,tviz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
+          ! STEP 7: INITIALIZE THE FIELDS
+        if (useRestartFile) then
+            call this%readRestartFile(restartfile_TID, restartfile_RID)
+            this%step = restartfile_TID
+            this%mix%material(2)%VF = 1 - this%mix%material(1)%VF
+            this%mix%material(2)%Ys = 1 - this%mix%material(1)%Ys
 
-        print *, "initfields"
+            this%uref = this%u
+            this%mix%material(1)%p = this%p
+            this%mix%material(2)%p = this%p
+
+            call initparam_restart(this%decomp,this%der,this%derStagg,this%interpMid, this%dx, this%dy, this%dz, inputfile, this%mesh, this%fields, &
+                        this%mix, this%tstop,this%dtfixed,tviz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
+
+        else 
+            call initfields(this%decomp,this%der,this%derStagg, this%interpMid, this%dx, this%dy, this%dz, inputfile, this%mesh, this%fields, &
+                        this%mix, this%tstop, this%dtfixed,tviz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
+        !    call this%mix%get_rhoYs_from_gVF(this%rho)
+        endif
         ! Get hydrodynamic and elastic energies, stresses
-        call this%mix%get_rhoYs_from_gVF(this%rho)  ! Get mixture rho and species Ys from species deformations and volume fractions
+        !call this%mix%get_rhoYs_from_gVF(this%rho)  ! Get mixture rho and species Ys from species deformations and volume fractions
         call this%post_bc()
-        ! Allocate 2 buffers for each of the three decompositions
+
         call alloc_buffs(this%xbuf,nbufsx,"x",this%decomp)
         call alloc_buffs(this%ybuf,nbufsy,"y",this%decomp)
         call alloc_buffs(this%zbuf,nbufsz,"z",this%decomp)
-
+        
         this%SkewSymm = SkewSymm
 
         varnames( 1) = 'density'
@@ -1079,8 +1110,10 @@ contains
         allocate(this%viz)
         call this%viz%init(this%outputdir, vizprefix, nfields, varnames)
         this%tviz = tviz
-
-        
+        if( useRestartfile ) then       
+           this%viz%vizcount = this%numviz
+        end if
+                
         if(this%SpongeLayer) then
           call get_sponge(this%decomp,this%dx,this%dy,this%dz,this%mesh,this%fields,this%mix,this%rhou_ref,this%rhov_ref,this%rhow_ref,this%rhoe_ref,this%sponge)
         endif
@@ -1470,7 +1503,7 @@ contains
         integer :: i
        ! vcon = 100
         
-         call this%get_tauSum(tauSum)
+         !call this%get_tauSum(tauSum)
          rhsP = 0.0
          rhoSos = zero
          rhoSos2 = zero
@@ -1561,7 +1594,7 @@ contains
 
 
     subroutine simulate(this)
-        use reductions, only: P_MEAN
+        use reductions, only: P_MEAN, P_MINVAL,P_MAXVAL
         use timer,      only: tic, toc
         use exits,      only: GracefulExit, message, check_exit
         use decomp_2d,  only: nrank
@@ -1574,7 +1607,9 @@ contains
         real(rkind), dimension(:,:,:), pointer :: dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz
         real(rkind), dimension(:,:,:), pointer :: ehmix
         integer :: i, imat
-      
+        logical :: restartWrite = .false.
+        real(rkind) :: u_max, u_min, v_max, v_min, w_max, w_min,p_min,p_max
+        real(rkind) :: rho_max, rho_min, Ys_min, Ys_max, VF_min, VF_max
 
         allocate( duidxj(this%nxp, this%nyp, this%nzp, 9) )
         ! Get artificial properties for initial conditions
@@ -1616,7 +1651,7 @@ contains
         call this%mix%getLAD(this%rho,this%p,this%e,this%u, this%v, this%w, duidxj,this%sos,this%yMetric,this%dy_stretch,this%use_gTg,this%strainHard,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc,this%intSharp_tfloor)  ! Compute species LAD (kap, diff, diff_g, diff_gt,diff_pe)
         nullify(dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz,ehmix)
         deallocate( duidxj )
-
+        
         ! ------------------------------------------------
         call this%get_dt(stability)
         !populate surface tension terms at initial condition
@@ -1637,7 +1672,6 @@ contains
         this%metric_N2F   = this%yMetric_F2N
         this%metric_half  = this%yMetric_half
         !call this%mix%Test_Der(this%x,this%y,this%z,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        !print *, "before test"
         !call this%mix%Test_Der_Periodic(this%x,this%y,this%z,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
         if(this%use_CnsrvSurfaceTension) then
             if(this%mix%ns.ne.2) then
@@ -1651,7 +1685,6 @@ contains
 
 
        call this%mix%get_gradp(this%rho,this%x_bc,this%y_bc,this%z_bc,this%dx,this%dy,this%dz,this%periodicx,this%periodicy,this%periodicz,this%u,this%v,this%w)
-       
 
         ! Write out initial conditions
         ! call hook_output(this%decomp, this%dx, this%dy, this%dz, this%outputdir, this%mesh, this%fields, this%mix, this%tsim, this%viz%vizcount)
@@ -1664,10 +1697,10 @@ contains
         endif
 
         vizcond = .FALSE.
-        
+       
         ! Check for visualization condition and adjust time step
         if ( (this%tviz > zero) .AND. (this%tsim + this%dt > this%tviz * this%viz%vizcount) ) then
-            this%dt = this%tviz * this%viz%vizcount - this%tsim
+            this%dt = abs(this%tviz * this%viz%vizcount - this%tsim)
             vizcond = .TRUE.
             stability = 'vizdump'
         end if
@@ -1700,11 +1733,40 @@ contains
             call toc(cputime)
 
             !call this%mix%thick_calculations(this%rho, this%p,this%u,this%pthick,this%uthick,this%rhothick,this%Ys_thick,this%VF_thick,this%Ys_wiggle,this%VF_wiggle, this%dx)          
+!            u_max = P_MAXVAL(this%u)
+!            u_min = P_MINVAL(this%u)
+!            v_max = P_MAXVAL(this%v)
+!            v_min = P_MINVAL(this%v)
+!            w_max = P_MAXVAL(this%w)
+!            w_min = P_MINVAL(this%w)
+!            p_max = P_MAXVAL(this%p)
+!            p_min = P_MINVAL(this%p)
+!            rho_max = P_MAXVAL(this%rho)
+!            rho_min = P_MINVAL(this%rho)
+!            Ys_max = P_MAXVAL(this%mix%material(1)%Ys)
+!            Ys_min = P_MINVAL(this%mix%material(1)%Ys)
+!            VF_max = P_MAXVAL(this%mix%material(1)%VF)
+!            VF_min = P_MINVAL(this%mix%material(1)%VF)
+
             call message(1,"Time",this%tsim)
             call message(1,"Step",this%step)
             call message(2,"Time step",this%dt)
             call message(2,"Stability limit: "//trim(stability))
             call message(2,"CPU time (in seconds)",cputime)
+   !         call message(3, " u min ", u_min)
+   !         call message(3, " u max ", u_max)
+   !         call message(3, " v min ", v_min)
+   !         call message(3, " v max ", v_max)
+   !         call message(3, " w min ", w_min)
+   !         call message(3, " w max ", w_max)
+   !         call message(3, " p min ", p_min)
+   !         call message(3, " p max ", p_max)
+   !         call message(3, " rho min ", rho_min)
+   !         call message(3, " rho max ", rho_max)
+   !         call message(3, " Ys min ", Ys_min)
+   !         call message(3, " Ys max ", Ys_max)
+   !         call message(3, " VF min ", VF_min)
+   !         call message(3, " VF max ", VF_max)
             call hook_timestep(this%decomp, this%mesh, this%fields, this%mix, this%step, this%tsim)
             ! Write out vizualization dump if vizcond is met 
            if (vizcond) then
@@ -1723,10 +1785,15 @@ contains
             call this%get_dt(stability)
             ! Check for visualization condition and adjust time step
             if ( (this%tviz > zero) .AND. (this%tsim + this%dt >= this%tviz * this%viz%vizcount) ) then
-                this%dt = this%tviz * this%viz%vizcount - this%tsim
+                this%dt = abs( this%tviz * this%viz%vizcount - this%tsim)
                 vizcond = .TRUE.
             end if
 
+
+           if ( restartWrite .or. (mod(this%step,this%t_restartDump) == 0) ) then
+                 call this%dumpRestartfile()
+                 call message(0,"Scheduled restart file dumped.")
+            end if
             ! Check tstop condition
             if ( (this%tstop > zero) .AND. (this%tsim >= this%tstop*(one - eps)) ) then
                 tcond = .FALSE.
@@ -1784,7 +1851,7 @@ contains
         integer :: isub,i,j,k,l,imat,iter,ii,jj,kk
         real(rkind), dimension(:,:,:,:), allocatable, target :: duidxj
         real(rkind), dimension(:,:,:), pointer :: dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz
-        real(rkind) :: Ystime, VFtime, consvTime, intsharp
+        real(rkind) :: Ystime, VFtime, consvTime, intsharp, u_max, u_min,rhoYs_min, rhoYs_max
         character(len=clen) :: charout
 
 
@@ -1809,10 +1876,27 @@ contains
             endif
 
             call this%get_conserved()
+        !    u_max = P_MAXVAL(this%u)
+        !    u_min = P_MINVAL(this%u)
+
+        !    call message(4," get conserved umax ", u_max)
+        !    call message(4," get conserved umin ", u_min)
             call this%getFaces()
+
+        !    u_max = P_MAXVAL(this%u)
+        !    u_min = P_MINVAL(this%u)
+
+        !    call message(5," get faces umax ", u_max)
+        !    call message(5, " get faces umin ", u_min)
+
             !!!!!!!!!!!!!!!!!!!!!! COMMENTED OUT G STUFF !!!!!!!!!!!!!!!!!!!!!!
             !call this%get_conserved_g()
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+            if ( nancheck(this%fields(:,:,:,rho_index)) ) then
+              write(charout,'(A,5(I0,A))') "NaN encountered in rho "
+              call GracefulExit(charout,4909)
+            end if
 
             if ( nancheck(this%Wcnsrv,i,j,k,l) ) then
                 call message("Wcnsrv: ",this%Wcnsrv(i,j,k,l))
@@ -1825,9 +1909,18 @@ contains
             call this%gradient(this%u, dudx, dudy, dudz, -this%x_bc,this%y_bc,this%z_bc)
             call this%gradient(this%v, dvdx, dvdy, dvdz,  this%x_bc,-this%y_bc,this%z_bc)
             call this%gradient(this%w, dwdx, dwdy, dwdz,  this%x_bc,this%y_bc,-this%z_bc)
+
             call this%mix%getLAD(this%rho,this%p,this%e,this%u, this%v, this%w,duidxj,this%sos,this%yMetric,this%dy_stretch,this%use_gTg,this%strainHard,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc,this%intSharp_tfloor)  ! Compute species LAD (kap, diff, diff_g, diff_gt,diff_pe)
+
             call this%mix%get_J(this%rho)                                          ! Compute diffusive mass fluxes
             call this%mix%get_q(this%x_bc,this%y_bc,this%z_bc)                     ! Compute diffusive thermal fluxes (including enthalpy diffusion)
+
+         !   u_max = P_MAXVAL(this%u)
+         !   u_min = P_MINVAL(this%u)
+
+         !   call message(6, " get LAD umax ", u_max)
+         !   call message(6, " get LAD umin ", u_min)
+
             if(this%intSharp) then
                if(this%mix%ns.ne.2) then
                   call GracefulExit("Problem if ns=1, should work for ns>2 but not tested",4634)
@@ -1876,6 +1969,7 @@ contains
                   
 
             endif
+
              call this%mix%checkNaN()
             !Calculate contributions of surface tension to all equation RHS's
             if(this%use_surfaceTension) then
@@ -1886,6 +1980,7 @@ contains
                 call this%mix%get_surfaceTension(this%rho,this%x_bc,this%y_bc,this%z_bc,this%dx,this%dy,this%dz,this%periodicx,this%periodicy,this%periodicz,this%u,this%v,this%w)  ! Compute surface tension terms for momentum and energy equations
 
             endif
+
 
              if(this%use_CnsrvSurfaceTension) then
                 if(this%mix%ns.ne.2) then
@@ -1904,13 +1999,19 @@ contains
             else
               call this%getRHS(rhs,divu,viscwork)
             endif
+
+!            u_max = P_MAXVAL(this%u)
+!            u_min = P_MINVAL(this%u)
+
+!            call message(7, " get RHS umax ", u_max)
+!            call message(7, " get RHS umin ", u_min)
+
             !!!!!!!!!!!!!! UNCOMMENT            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
            Qtmp  = this%dt*rhs  + RK45_A(isub)*Qtmp
            this%Wcnsrv = this%Wcnsrv + RK45_B(isub)*Qtmp
            !!!!!!!!!!!!!!!!!!! UNCOMMENT       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  
             ! calculate sources if they are needed
-            if(.not. this%PTeqb) call this%mix%calculate_source(this%rho,divu,this%u,this%v,this%w,this%p,Fsource,this%x_bc,this%y_bc,this%z_bc) ! -- actually, source terms should be included for PTeqb as well --NSG
+           ! if(.not. this%PTeqb) call this%mix%calculate_source(this%rho,divu,this%u,this%v,this%w,this%p,Fsource,this%x_bc,this%y_bc,this%z_bc) ! -- actually, source terms should be included for PTeqb as well --NSG
 
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! COMMENTED OUT UPDATE G             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             ! Now update all the individual species variables
@@ -1923,6 +2024,7 @@ contains
 
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! UNCOMMENT             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             call this%mix%update_Ys(isub,this%dt,this%rho,this%u_mid(:,:,:,1),this%v_mid(:,:,:,2),this%w_mid(:,:,:,3),this%x,this%y,this%z,this%tsim,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc,this%sponge)               ! Volume Fraction
+
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! UNCOMENT             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             !if (.NOT. this%PTeqb) then
             if(this%pEqb) then
@@ -1933,6 +2035,16 @@ contains
                 call this%mix%update_VF(isub,this%dt,this%rho,this%u,this%v,this%w,this%x,this%y,this%z,this%tsim,divu,Fsource,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc,this%sponge)                        ! Volume Fraction
                 call this%mix%update_eh(isub,this%dt,this%rho,this%u,this%v,this%w,this%x,this%y,this%z,this%tsim,divu,viscwork,Fsource,this%devstress,this%x_bc,this%y_bc,this%z_bc) ! Hydrodynamic energy
             end if
+
+            u_max = P_MAXVAL(this%u)
+            u_min = P_MINVAL(this%u)
+
+  !          rhoYs_min = P_MINVAL(this%mix%material(1)%consrv(:,:,:,1))
+  !          rhoYs_max = P_MAXVAL(this%mix%material(1)%consrv(:,:,:,1))
+  !          call message(4, " get YS/VF umax ", u_max)
+  !          call message(4, " get YS/VF umin ", u_min)
+  !          call message(4, " get YS/VF rhoYsmax ", rhoYs_max)
+  !          call message(4, " get YS/VF rhoYsmin ", rhoYs_min)
             ! Integrate simulation time to keep it in sync with RK substep
             Qtmpt = this%dt + RK45_A(isub)*Qtmpt
             this%tsim = this%tsim + RK45_B(isub)*Qtmpt
@@ -1943,16 +2055,7 @@ contains
             !this%T = 10
             !this%u = 10
             !this%v = 0 !(sin(pi*this%y)**2)*sin(2*pi*this%x)*cos(pi*this%tsim/4)
-            ! !print *, '-----', 8, this%Wcnsrv(179,1,1,1:4)
-            ! !do i = 1, size(this%Wcnsrv,1)
-            ! !    write(*,'(4(e21.14,1x))') this%Wcnsrv(i,1,1,1:4)
-            ! !enddo
-
-            ! this%filt_mask = .FALSE.!.TRUE.
-            ! if(this%filt_mask) then
-            !    if(isub.eq.RK45_steps) then
-            !    if(this%step.gt.one) then
-            !       if ((isub.eq.one).and.(nrank.eq.0)) print*,"masking filter"
+            ! !print*,"masking filter"
             !       this%filt_tmp(:,:,:,1) = this%Wcnsrv(:,:,:,mom_index  )
             !       this%filt_tmp(:,:,:,2) = this%Wcnsrv(:,:,:,mom_index+1)
             !       this%filt_tmp(:,:,:,3) = this%Wcnsrv(:,:,:,mom_index+2)
@@ -2028,6 +2131,28 @@ contains
             endif
 
             call this%get_primitive()
+             
+            u_max = P_MAXVAL(this%u)
+            u_min = P_MINVAL(this%u)
+
+     !       call message(5, " get prim umax ", u_max)
+     !       call message(5, " get prim umin ", u_min)
+
+            if ( nancheck(this%fields(:,:,:,rho_index)) ) then
+              write(charout,'(A,5(I0,A))') "NaN encountered in rho "
+              call GracefulExit(charout,4909)
+            end if
+
+            if ( nancheck(this%Wcnsrv,i,j,k,l) ) then
+                call message("Wcnsrv: ",this%Wcnsrv(i,j,k,l))
+                !write(charout,'(A,I1,A,I5,A,4(I5,A))') "NaN encountered in
+                !solution (Wcnsrv) at substep ", isub, " of step ", this%step+1,
+                !" at (",i,", ",j,", ",k,", ",l,") of Wcnsrv"
+                write(charout,'(A,I1,A,I5,A,4(I5,A))') "NaN encountered in solution (Wcnsrv) at substep ", isub, " of step ", this%step+1, " at(",i+this%decomp%yst(1)-1,", ",j+this%decomp%yst(2)-1,", ",k+this%decomp%yst(3)-1,", ",l,") of Wcnsrv"
+                call GracefulExit(trim(charout), 999)
+            end if
+
+            call this%mix%checkNaN()
             !!!!!!!!!!! COMMENTED OUT THINGS TO DO WITH G             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             !call this%get_primitive_g()
             !call this%mix%implicit_plastic(this%rho) !implicit plastic deformation using new g and new rho
@@ -2064,6 +2189,7 @@ contains
 
             elseif (this%pEqb) then
                call this%mix%equilibratePressure(this%rho, this%e, pmix)
+
                !call this%mix%updateP_VF(this%rho,this%e,this%p)
             elseif (this%pRelax) then
                 call this%mix%relaxPressure(this%rho, this%e, this%p)
@@ -2071,6 +2197,12 @@ contains
             end if
             !this%pError = abs(this%pEvolve - this%p)
             !this%VFError = abs(this%VFEvolve - this%mix%material(1)%VF)
+
+!            u_max = P_MAXVAL(this%u)
+!            u_min = P_MINVAL(this%u)
+
+!            call message(10, " get eqb umax ", u_max)
+!            call message(10, " get eqb umin ", u_min)
 
             !print *, nrank, 11
             !#####################################################################
@@ -2084,11 +2216,26 @@ contains
             !#####################################################################
 
             call hook_bc(this%decomp, this%mesh, this%fields, this%mix, this%tsim, this%x_bc, this%y_bc, this%z_bc)
+            
+!             u_max = P_MAXVAL(this%u)
+!            u_min = P_MINVAL(this%u)
+
+!            call message(11, " get hook bc ", u_max)
+!            call message(11, " get hook bc ", u_min)
+
             if(this%pEqb) then
             call this%post_bc_2()
             else
             call this%post_bc()
             endif
+
+
+!             u_max = P_MAXVAL(this%u)
+!            u_min = P_MINVAL(this%u)
+
+!            call message(12, " get post umax ", u_max)
+!            call message(12, " get post umin ", u_min)
+
             !call hook_output(this%decomp,this%der,this%dx,this%dy,this%dz,this%outputdir,this%mesh,this%fields,this%mix,this%tsim,this%viz%vizcount,this%x_bc,this%y_bc,this%z_bc)     
             ! if( this%Stretch1Dy) then
             !       call this%viz%WriteViz(this%decomp, this%meshstretch,this%fields, this%mix, this%tsim)
@@ -2152,11 +2299,12 @@ contains
         sigma_max = P_MAXVAL(this%sponge(:,:,:,1))
         dtSponge  = this%CFL / sigma_max
         ! continuum
-        !dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dx + ABS(this%v)/this%dy + ABS(this%w)/this%dz   &
-        !       + this%sos*sqrt( one/(this%dx**2) + one/(this%dy**2) + one/(this%dz**2) ))
+        dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dx + ABS(this%v)/this%dy + ABS(this%w)/this%dz   &
+               + this%sos*sqrt( one/(this%dx**2) + one/(this%dy**2) + one/(this%dz**2) ))
 
-        dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dx + ABS(this%v)/this%dy +  &
-               + this%sos*sqrt( one/(this%dx**2) + one/(this%dy**2)  ))
+
+      !  dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dx + ABS(this%v)/this%dy +  &
+      !         + this%sos*sqrt( one/(this%dx**2) + one/(this%dy**2)  ))
         !print *, "u maxval"
         !print *, P_MAXVAL( ABS(this%u)/this%dx )
         !print *, "v maxval"
@@ -2480,13 +2628,27 @@ contains
 
     subroutine post_bc(this)
         class(sgrid), intent(inout) :: this
+        integer :: i
 
         if(this%useOneG) then
             call this%mix%get_mixture_properties()
         endif
+
         call this%mix%get_eelastic_devstress(this%devstress)   ! Get species elastic energies, and mixture and species devstress
         call this%mix%get_ehydro_from_p(this%rho)              ! Get species hydrodynamic energy, temperature; and mixture pressure, temperature
-        call this%mix%get_pmix(this%p)                         ! Get mixture pressure
+        call this%mix%get_pmix(this%p)
+       ! Get mixture pressure
+    !    if( this%useRestartFile ) then
+
+    !        do i = 1, 2
+
+    !           call this%mix%material(i)%get_ehydroT_from_p(this%rho)
+ 
+    !        enddo
+
+
+    !    endif
+
         call this%mix%get_Tmix(this%T)                         ! Get mixture temperature
         call this%mix%getSOS(this%rho,this%p,this%sos)
 !print *, 'SOS: ', this%sos(179,1,1)
@@ -2497,7 +2659,7 @@ contains
 
     subroutine post_bc_2(this)
         class(sgrid), intent(inout) :: this
-
+        integer :: i
         if(this%useOneG) then
             call this%mix%get_mixture_properties()
         endif
@@ -2505,6 +2667,18 @@ contains
         ! Get specieshydrodynamic energy, temperature; and mixture pressure, temperature
         call this%mix%get_ehydro_from_p(this%rho) 
         call this%mix%get_pmix(this%p)                         ! Get mixturepressure
+
+      !   if( this%useRestartFile ) then
+
+      !      do i = 1, 2
+
+      !         call this%mix%material(i)%get_ehydroT_from_p(this%rho)
+
+      !      enddo
+
+
+      !  endif
+
         call this%mix%get_Tmix(this%T)                         ! Get mixturetemperature
         call this%mix%getSOS(this%rho,this%p,this%sos)
 !print *, 'SOS: ', this%sos(179,1,1)
@@ -2735,7 +2909,7 @@ contains
           call this%get_q(qx, qy, qz)            ! add artificial thermal conduction fluxes
         end if
 
-        call this%get_qLAD(qx,qy,qz,this%qDiv)
+        !call this%get_qLAD(qx,qy,qz,this%qDiv)
         rhs = zero
 
         if(this%use_Stagg) then
@@ -4050,85 +4224,6 @@ subroutine getRHS_NC(this, rhs, divu, viscwork)
     end subroutine 
 
 
-    subroutine get_tauSum(this,tauSum)
-        use operators, only: divergence,gradient,divergenceFV,interpolateFV,interpolateFV_x,interpolateFV_y,interpolateFV_z,gradFV_x, gradFV_y, gradFV_z
-        class(sgrid), target, intent(inout) :: this
-        real(rkind), dimension(this%nxp,this%nyp,this%nzp), intent(inout) :: tauSum
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp) :: dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp,3) :: w_int, v_int, u_int
-        real(rkind), dimension(:,:,:), pointer :: lambda, bambda
-
-        lambda => this%ybuf(:,:,:,1)
-        bambda => this%ybuf(:,:,:,2)
-
-        !call gradient(this%decomp,this%derCD06,this%u, dudx, dudy, dudz,-this%x_bc,  this%y_bc,this%z_bc)
-        !call gradient(this%decomp,this%derCD06,this%v, dvdx, dvdy, dvdz,this%x_bc, -this%y_bc,this%z_bc)
-        !call gradient(this%decomp,this%derCD06,this%w, dwdx, dwdy, dwdz,this%x_bc,  this%y_bc,-this%z_bc)
-
-        call interpolateFV_x(this%decomp,this%interpMid,this%w,w_int(:,:,:,1),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_y(this%decomp,this%interpMid,this%w,w_int(:,:,:,2),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_z(this%decomp,this%interpMid,this%w,w_int(:,:,:,3),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        call interpolateFV_x(this%decomp,this%interpMid,this%v,v_int(:,:,:,1),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_y(this%decomp,this%interpMid,this%v,v_int(:,:,:,2),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_z(this%decomp,this%interpMid,this%v,v_int(:,:,:,3),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        call interpolateFV_x(this%decomp,this%interpMid,this%u,u_int(:,:,:,1),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_y(this%decomp,this%interpMid,this%u,u_int(:,:,:,2),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_z(this%decomp,this%interpMid,this%u,u_int(:,:,:,3),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        call gradFV_x(this%decomp,this%derStagg,u_int(:,:,:,1),dudx,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_y(this%decomp,this%derStagg,u_int(:,:,:,2),dudy,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_z(this%decomp,this%derStagg,u_int(:,:,:,3),dudz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        call gradFV_x(this%decomp,this%derStagg,v_int(:,:,:,1),dvdx,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_y(this%decomp,this%derStagg,v_int(:,:,:,2),dvdy,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_z(this%decomp,this%derStagg,v_int(:,:,:,3),dvdz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        call gradFV_x(this%decomp,this%derStagg,w_int(:,:,:,1),dwdx,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_y(this%decomp,this%derStagg,w_int(:,:,:,2),dwdy,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_z(this%decomp,this%derStagg,w_int(:,:,:,3),dwdz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-
-        this%dudx = dudx; this%dudy = dudy; this%dudz = dudz;
-        this%dwdx = dwdx; this%dwdy = dwdy; this%dwdz = dwdz;
-        this%dvdx = dvdx; this%dvdy = dvdy; this%dvdz = dvdz;
-
-        ! Compute the multiplying factors (thermo-shit)
-        bambda = (four/three)*this%mu + this%bulk
-        lambda = this%bulk - (two/three)*this%mu
-
-
-        ! Step 1: Get tau_12  (dudy is destroyed)
-        this%tauxy =  this%mu*(dudy + dvdx)
-        !tauxyidz = 2
-
-        ! Step 2: Get tau_13 (dudz is destroyed)
-        this%tauxz = this%mu*(dudz + dwdx)
-        !tauxzidx = 3
-
-        ! Step 3: Get tau_23 (dvdz is destroyed)
-        this%tauyz = this%mu*(dvdz + dwdy)
-        !tauyzidx = 6
-
-        ! Step 4: Get tau_11 (dvdx is destroyed)
-        this%tauxx = bambda*dudx + lambda*(dvdy + dwdz)
-
-        ! Step 5: Get tau_22 (dwdx is destroyed)
-        this%tauyy = bambda*dvdy + lambda*(dudx + dwdz)
-        !tauyyidx = 7
-
-        ! Step 6: Get tau_33 (dwdy is destroyed)
-        this%tauzz = bambda*dwdz + lambda*(dudx + dvdy)
-        !tauzzidx = 8
-
-        tauSum =  this%tauxx*dudx + this%tauyy*dvdy + this%tauzz*dwdz &
-                + this%tauxy*dudy + this%tauxz*dudz + this%tauyz*dvdz &
-                + this%tauxy*dvdx + this%tauxz*dwdx + this%tauyz*dwdy
-
-        this%tauSum = tauSum
-        ! Done 
-    end subroutine
-
     subroutine get_tauStagg(this,duidxj,duidxj_int,duidxj_s)
         use operators, only : interpolateFV_x, interpolateFV_y, interpolateFV_z
         class(sgrid), target, intent(inout) :: this
@@ -4259,36 +4354,167 @@ subroutine getRHS_NC(this, rhs, divu, viscwork)
         ! Done
     end subroutine
 
-    subroutine get_qLAD(this,qx,qy,qz,qDiv)
-        use exits, only: nancheck
-        use operators, only: divergenceFV, interpolateFV,interpolateFV_x, interpolateFV_y, interpolateFV_z, gradFV_N2Fx, gradFV_N2Fy,gradFV_N2Fz
+     subroutine readRestartFile(this, tid, rid)
+        use decomp_2d,  only: nrank
+        use decomp_2d_io
+        use mpi
+        use exits, only: message
+        use kind_parameters, only: mpirkind
+        class(sgrid), intent(inout) :: this
+        integer, intent(in) :: tid, rid
+        character(len=clen) :: tempname, fname
+        integer :: ierr, fid
 
-        class(sgrid), target, intent(inout) :: this
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(inout) :: qx,qy,qz,qDiv
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_u.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%u,fname, this%decomp)
 
-        ! integer :: i
-        real(rkind), dimension(:,:,:), pointer :: tmp1_in_x, tmp2_in_x,tmp1_in_y, tmp1_in_z, tmp2_in_z
-        type(derivatives), pointer :: der
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp,3) :: kap_int
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_v.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%v,fname, this%decomp)
 
-        qx = 0
-        qy = 0
-        qz = 0
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_w.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%w,fname, this%decomp)
 
-        call interpolateFV_x(this%decomp,this%interpMid,this%kap,kap_int(:,:,:,1),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_y(this%decomp,this%interpMid,this%kap,kap_int(:,:,:,2),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call interpolateFV_z(this%decomp,this%interpMid,this%kap,kap_int(:,:,:,3),this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_VF.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%mix%material(1)%VF,fname, this%decomp)
 
-        call gradFV_N2Fx(this%decomp,this%derStagg,this%T,qx,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_N2Fy(this%decomp,this%derStagg,this%T,qy,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        call gradFV_N2Fz(this%decomp,this%derStagg,this%T,qz,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_Ys.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%mix%material(1)%Ys,fname, this%decomp)
 
-        qx = -kap_int(:,:,:,1)*qx
-        qy = -kap_int(:,:,:,2)*qy
-        qz = -kap_int(:,:,:,3)*qz
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_rho.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%rho,fname, this%decomp)
 
-        call divergenceFV(this%decomp,this%derStagg,qx,qy,qz,qDiv,this%periodicx,this%periodicy,this%periodicz,this%x_bc,this%y_bc,this%z_bc)
-        ! Done
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",rid, "_p.",tid
+        fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+        call decomp_2d_read_one(2,this%p,fname, this%decomp)
+
+        if (nrank == 0) then
+            write(tempname,"(A7,A4,I2.2,A6,I6.6)") "RESTART", "_Run",rid, "_info.",tid
+            fname = this%inputdir(:len_trim(this%inputdir))//"/"//trim(tempname)
+            fid = 10
+            open(unit=fid,file=trim(fname),status="old",action="read")
+            read (fid, "(100g15.5)")  this%tsim
+            close(fid)
+        end if
+
+
+        call mpi_barrier(mpi_comm_world, ierr)
+        call mpi_bcast(this%tsim,1,mpirkind,0,mpi_comm_world,ierr)
+        call mpi_barrier(mpi_comm_world, ierr)
+        call message("================= RESTART FILE USED ======================")
+        call message(0, "Simulation Time at restart:", this%tsim)
+        call message("=================================== ======================")
+
+    !   if(nrank == 0) then
+    !      print *, " y ", this%w(1,:,1)
+    !    endif
+
+
     end subroutine
 
+    subroutine dumpRestartFile(this)
+        use decomp_2d,  only: nrank
+        use decomp_2d_io
+        use mpi
+        use exits, only: message
+        class(sgrid), intent(inout) :: this
+        character(len=clen) :: tempname, fname
+        integer :: ierr, rank
+
+        call MPI_COMM_RANK(mpi_comm_world,rank,ierr)
+     !   this%v = rank
+     !   this%w = this%y
+     !   this%p = this%x
+
+     !   if(nrank == 0) then
+     !     print *, " y ", this%w(1,:,1)
+     !   endif
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_u.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%u,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_v.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%v,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_w.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%w,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_VF.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%mix%material(1)%VF,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_Ys.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%mix%material(1)%Ys,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_rho.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%rho,fname, this%decomp)
+
+        write(tempname,"(A7,A4,I2.2,A3,I6.6)") "RESTART", "_Run",this%runID, "_p.",this%step
+        fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+        call decomp_2d_write_one(2,this%p,fname, this%decomp)
+
+        if (nrank == 0) then
+            write(tempname,"(A7,A4,I2.2,A6,I6.6)") "RESTART", "_Run",this%runID, "_info.",this%step
+            fname = this%outputdir(:len_trim(this%outputdir))//"/"//trim(tempname)
+            OPEN(UNIT=10, FILE=trim(fname))
+            write(10,"(100g15.5)") this%tsim
+            close(10)
+        end if
+
+        call mpi_barrier(mpi_comm_world, ierr)
+        call message(1, "Just Dumped a RESTART file")
+
+    end subroutine
+
+
+    ! NOTE: If you want to dump an edge field, you need to call in dumpFullField
+    ! routine with this%gpE passed in as the 3rd argument. If it's a cell field,
+    ! then you don't need to pass in any gp since the default gp is this%gpC
+!   subroutine dumpFullField(this,arr,label,gp2use)
+!       use decomp_2d_io
+!       use mpi
+!       use exits, only: message
+!       class(igrid), intent(in) :: this
+!       character(len=clen) :: tempname, fname
+!       real(rkind), dimension(:,:,:), intent(in) :: arr
+!       character(len=4), intent(in) :: label
+!       type(decomp_info), intent(in), optional :: gp2use
+
+!        write(tempname,"(A3,I2.2,A1,A4,A2,I6.6,A4)") "Run",this%runID, "_",label,"_t",this%step,".out"
+!        fname = this%outputdir(:len_trim(this%OutputDir))//"/"//trim(tempname)
+!        if (present(gp2use)) then
+!           call decomp_2d_write_one(1,arr,fname,gp2use)
+!        else
+!           call decomp_2d_write_one(1,arr,fname,this%gpC)
+!        end if
+
+!   end subroutine
+
+
+!   subroutine dumpVisualizationInfo(this)
+!       class(sgrid), intent(in) :: this
+!       character(len=clen) :: tempname, fname
+
+
+!     if (nrank == 0) then
+!           write(tempname,"(A3,I2.2,A1,A4,A2,I6.6,A4)") "Run",this%runID, "_","info","_t",this%step,".out"
+!           fname = this%outputdir(:len_trim(this%OutputDir))//"/"//trim(tempname)
+!           OPEN(UNIT=10, FILE=trim(fname))
+!           write(10,"(100g17.9)") this%tsim
+!           write(10,"(100g17.9)") real(this%nx,rkind)
+!           write(10,"(100g17.9)") real(this%ny,rkind)
+!           write(10,"(100g17.9)") real(this%nz,rkind)
+!           close(10)
+!       end if
+!   end subroutine
+    !! STATISTICS !!
 end module 

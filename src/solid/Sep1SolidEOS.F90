@@ -96,20 +96,29 @@ contains
         this%kos_beta = kos_beta_
         this%kos_e = kos_e_
         this%kos_sh = kos_sh_
-
-
+        
+        print *, "read in values"
+        print *, "nx ", this%nxd
+        print *, "ny ", this%nyd
+        print *, "nz ", this%nzd
         if (allocated(this%mu)) deallocate(this%mu); allocate(this%mu(this%nxd,this%nyd,this%nzd))
+     
         if (allocated(this%yield)) deallocate(this%yield); allocate(this%yield(this%nxd,this%nyd,this%nzd))
+        print *, " allocate mu"
+
         this%mu = this%mu0
+        print *, "mu 0"
         this%yield = this%yield0
-
+        print *, "this yeld"
         if (allocated(this%svdwork)) deallocate(this%svdwork); allocate(this%svdwork(1))
-
+       ! print *, "allocate svd"
         ! Get optimal lwork
         lwork = -1
         call dgesvd('A', 'A', 3, 3, g, 3, sval, u, 3, vt, 3, this%svdwork, lwork, info)
+        print *, "svd dege"
         lwork = this%svdwork(1)
-
+         print *, "svd lwork ", lwork
+         
         deallocate(this%svdwork); allocate(this%svdwork(lwork))
 
     end function
@@ -118,6 +127,8 @@ contains
         type(sep1solid), intent(inout) :: this
 
         if (allocated(this%svdwork)) deallocate(this%svdwork)
+        if (allocated(this%mu)) deallocate(this%mu)
+        if (allocated(this%yield)) deallocate(this%yield)
     end subroutine
 
     subroutine get_finger(this,g,finger,fingersq,trG,trG2,detG,use_gTg)

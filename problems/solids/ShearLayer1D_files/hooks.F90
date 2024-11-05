@@ -304,15 +304,13 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
 
         ! Set up smearing function for VF based on interface location and thickness
         !tmp = half * ( one - erf( (x-(interface_init+eta0k/(2.0_rkind*pi*kwave)*sin(2.0_rkind*kwave*pi*y)))/(thick*dx) ) )
-        dx1 = (2*pi/4)*(1/32)
         
         delta_rho = Nrho * dx * 0.275d0 !converts from Nrho to approximate thickness of erf profile
         yphys = atanh(2.0*y /(1 + 1/STRETCH_RATIO))
         Lr    = 24.0/(yphys(1,ny,1) - yphys(1,1,1))
         yphys = Lr*yphys
         eta2 = yphys !eta !-delta_rho
-
-        
+      
 
         where(eta2 .ge. 0)
            u = v0_2*erf(eta2/delta)
@@ -323,147 +321,12 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
            v = 0
            w = 0
 
-        print *, "read in files"
-        phi_i = 0
-        phi_r = 0
-        do i = 1,4        
-             write(phiIname, '(A,I0,A)') 'alpha',i,'/Phi_I.txt'
-             write(phiRname, '(A,I0,A)') 'alpha',i,'/Phi_R.txt'
-             write(DphiIname, '(A,I0,A)') 'alpha',i,'/DPhi_I.txt'
-             write(DphiRname, '(A,I0,A)') 'alpha',i,'/DPhi_R.txt'
-             write(rhoIname, '(A,I0,A)') 'alpha',i,'/rho_I.txt'
-             write(rhoRname, '(A,I0,A)') 'alpha',i,'/rho_R.txt'
-             write(pIname, '(A,I0,A)') 'alpha',i,'/P_I.txt'
-             write(pRname, '(A,I0,A)') 'alpha',i,'/P_R.txt'
-             open (unit=8, file=phiIname, status='old', action='read' )
-             open (unit=12, file=phiRname, status='old', action='read' )
-             open (unit=16, file=DphiIname, status='old', action='read' )
-             open (unit=18, file=DphiRname, status='old', action='read' )
-
-             open (unit=20, file=rhoIname, status='old', action='read' )
-             open (unit=22, file=rhoRname, status='old', action='read' )
-             open (unit=24, file=pIname, status='old', action='read' )
-             open (unit=26, file=pRname, status='old', action='read' )
-              
-
-              do j = 1,pointy
-                read(8,*) phi_i(j,i)
-                read(12,*) phi_r(j,i)
-                read(16,*) Dphi_i(j,i)
-                read(18,*) Dphi_r(j,i)
-
-                read(20,*) rho_disturb(j,1,i)
-                read(22,*) rho_disturb(j,2,i)
-                read(24,*) p_disturb(j,1,i)
-                read(26,*) p_disturb(j,2,i)
-              end do
-
-              close(8)
-              close(12)
-              close(16)
-              close(18)
-              close(20)
-              close(22)
-              close(24)
-              close(26)
-         end do
-
-         print *, "finished reading"
-!        open (unit=20, file="Phi_I_2.txt", status='old', action='read' )
-!        open (unit=22, file="Phi_R_2.txt", status='old', action='read' )
-!        open (unit=24, file="DPhi_I_2.txt", status='old', action='read' )
-!        open (unit=26, file="DPhi_R_2.txt", status='old', action='read' )
-
-!        open (unit=28, file="Phi_I_3.txt", status='old', action='read' )
-!        open (unit=30, file="Phi_R_3.txt", status='old', action='read' )
-!        open (unit=32, file="DPhi_I_3.txt", status='old', action='read' )
-!        open (unit=34, file="DPhi_R_3.txt", status='old', action='read' )
-
-!        open (unit=36, file="Phi_I_4.txt", status='old', action='read' )
-!        open (unit=38, file="Phi_R_4.txt", status='old', action='read' )
-!        open (unit=40, file="DPhi_I_4.txt", status='old', action='read' )
-!        open (unit=42, file="DPhi_R_4.txt", status='old', action='read' )
-
-!        open (unit=44, file="Phi_I_5.txt", status='old', action='read' )
-!        open (unit=46, file="Phi_R_5.txt", status='old', action='read' )
-!        open (unit=48, file="DPhi_I_5.txt", status='old', action='read' )
-!        open (unit=50, file="DPhi_R_5.txt", status='old', action='read' )
-
-!        open (unit=52, file="Phi_I_6.txt", status='old', action='read' )
-!        open (unit=54, file="Phi_R_6.txt", status='old', action='read' )
-!        open (unit=56, file="DPhi_I_6.txt", status='old', action='read' )
-!        open (unit=58, file="DPhi_R_6.txt", status='old', action='read' )
-
-!        open (unit=60, file="Phi_I_7.txt", status='old', action='read' )
-!        open (unit=62, file="Phi_R_7.txt", status='old', action='read' )
-!        open (unit=64, file="DPhi_I_7.txt", status='old', action='read' )
-!        open (unit=66, file="DPhi_R_7.txt", status='old', action='read' )
-
-        do i = 1,4          
-           alphai(i) = i/4.0
-        !  alphai(2) = 2.0 !1.5
-        !  alphai(3) = 2
-        !  alphai(4) = 0 !2.5
-        !  alphai(5) = 3   !0.5 + 0.5*(i)
-
-        enddo
-
-        print *, "alpha = ", alphai(2)
-
-        phase(1) = -pi/2 ! pi/4 ! -pi/4
-        phase(2) = pi/2 !pi
-        phase(3) = pi/4 !-pi/4 !pi/4
-        phase(4) = -pi !-pi/2
-
-        mix%material(1)%p  = p_amb
-        tmp = (half ) * ( one - erf( (yphys)/(delta_rho) ) )
-
-        !set mixture Volume fraction
-        mix%material(1)%VF = minVF + (one-two*minVF)*tmp
-
-    !    do i = 1,2
-    !       call interpolateFV_y(decomp,interpMid,phi_i3(:,:,:,i),phi_i_int,periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
- 
-    !       call interpolateFV_y(decomp,interpMid,phi_r3(:,:,:,i),phi_r_int,periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
-
-    !       call gradFV_y(decomp,derStagg,phi_i_int,Dphi_i(:,:,:,i),periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
-    !       call gradFV_y(decomp,derStagg,phi_r_int,Dphi_r(:,:,:,i),periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
-    !    enddo
-        v = 0
-        u_perturb = 0
-        !j = 2
-        do i = 1,pointy
-          do j = 1,4
-            v(:,i,:) = v(:,i,:) + (phi_i(i,j)*cos(alphai(j)*x(:,i,:) - phase(j)) + phi_r(i,j)*sin(alphai(j)*x(:,i,:)) - phase(j) )
-            u_perturb(:,i,:)  = u_perturb(:,i,:) - Dphi_i(i,j)*sin(alphai(j)*x(:,i,:) - phase(j))/alphai(j) + Dphi_r(i,j)*cos(alphai(j)*x(:,i,:) - phase(j))/alphai(j)
- 
-          enddo  
-        enddo
-   
-        KE = 0.5*(v**2 + u_perturb**2)
-        int_KE = P_SUM(KE/(nx*ny*nz))
-        v = epsilonk*v !/sqrt(int_KE)
-        u = u + epsilonk*u_perturb !/sqrt(int_KE)
-       ! do i = 1,pointy
-           
-       !    do j = 1,2
-       !     mix%material(1)%p(:,i,:) = mix%material(1)%p(:,i,:) + epsP*( p_disturb(i,2,j)*cos(alphai(j)*x(:,i,:)) - p_disturb(i,1,j)*sin(alphai(j)*x(:,i,:) ))/sqrt(int_KE)
-       !     print *, "p "
-       !     mix%material(1)%VF(:,i,:) = mix%material(1)%VF(:,i,:) + epsRho*( rho_disturb(i,2,j)*cos(alphai(j)*x(:,i,:)) -  rho_disturb(i,1, j)*sin(alphai(j)*x(:,i,:) ))/sqrt(int_KE)
-       !     print *, "VF"
-       !    enddo
-
-
-       ! enddo
-
         mix%material(2)%VF = 1 - mix%material(1)%VF
         !Set density profile and mass fraction based on volume fraction
         rho = rho_0*mix%material(1)%VF + rho_0_2*mix%material(2)%VF
         mix%material(1)%Ys = mix%material(1)%VF * rho_0 / rho
         mix%material(2)%Ys = one - mix%material(1)%Ys ! Enforce sum to unity
-
         mix%material(2)%p  = mix%material(1)%p 
-
 
         ! Set initial values of g (inverse deformation gradient)
         mix%material(1)%g11 = one;  mix%material(1)%g12 = zero; mix%material(1)%g13 = zero

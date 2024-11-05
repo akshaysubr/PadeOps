@@ -141,6 +141,7 @@ module SolidMixtureMod
         procedure :: rootfind_nr_1d_new
         procedure :: thick_calculations
         procedure :: Test_1DStretch
+        procedure :: set_material_restart
         final     :: destroy
 
     end type
@@ -649,9 +650,22 @@ contains
 
         if (allocated(this%material(imat)%hydro)) deallocate(this%material(imat)%hydro)
         allocate( this%material(imat)%hydro, source=hydro )
-        
+        print *, "allocate hydro" 
         if (allocated(this%material(imat)%elastic)) deallocate(this%material(imat)%elastic)
         allocate( this%material(imat)%elastic, source=elastic )
+        print *, "allocate elastic"
+    end subroutine
+
+    subroutine set_material_restart(this, imat, hydro)
+        class(solid_mixture), intent(inout) :: this
+        integer,              intent(in)    :: imat
+        class(stiffgas ),     intent(in)    :: hydro
+
+        if ((imat .GT. this%ns) .OR. (imat .LE. 0)) call GracefulExit("Cannotset material with index greater than the number of species.",4534)
+
+        if (allocated(this%material(imat)%hydro))deallocate(this%material(imat)%hydro)
+        allocate( this%material(imat)%hydro, source=hydro )
+        print *, "allocate hydro"
     end subroutine
 
 
@@ -1951,10 +1965,10 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
         endif
 
   
-        call this%get_eelastic_devstress(devstress)   ! Get species elastic energies, and mixture and species devstress
-        if(this%ns == 1) then
-          this%material(1)%eh = e - this%material(1)%eel ! Since eh equation is not exact and this is a better alternative for 1 species
-        endif
+     !   call this%get_eelastic_devstress(devstress)   ! Get species elastic energies, and mixture and species devstress
+     !   if(this%ns == 1) then
+     !     this%material(1)%eh = e - this%material(1)%eel ! Since eh equation is not exact and this is a better alternative for 1 species
+     !   endif
 
         if(this%PTeqb) then    ! --- why is this condition needed here? this provides initial guess for pressure even in pRelax case -- NSG
             call this%get_p_from_ehydro(rho)   ! Get species pressures from species hydrodynamic energy 
@@ -1988,21 +2002,34 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
     subroutine get_rho(this,rho)
         use reductions, only: P_MAXVAL, P_MINVAL
         use decomp_2d,  only: nrank
+        use exits, only : nancheck
         class(solid_mixture), intent(inout) :: this
         real(rkind), dimension(this%nxp,this%nyp,this%nzp), intent(out) :: rho
-        real(rkind) :: rhomin
+        real(rkind) :: rhomin    
+        character(len=clen) :: charout
 
+        integer :: i,j,k,l
         integer :: imat
+
 
         rho = zero
         do imat = 1, this%ns
 
-           !rhomin = P_MINVAL(this%material(imat)%consrv(:,:,:,1))
-           !if (nrank.eq.0) print*,imat,rhomin
+           rhomin = P_MINVAL(this%material(imat)%consrv(:,:,:,1))
+ !          if (nrank.eq.0) print*,imat,rhomin
         
 
           rho = rho + this%material(imat)%consrv(:,:,:,1)
         end do
+
+!        if ( nancheck(rho,i,j,k,l) ) then
+!            write(charout,'(A,5(I0,A))') "NaN encountered in rho ", imat,&
+!                         &" at (",i,", ",j,", ",k,", ",l,") "
+!            print*,'rho NaN',i+this%decomp%yst(1)-1,j+this%decomp%yst(2)-1,k+this%decomp%yst(3)-1,l
+!            call GracefulExit(charout,4909)
+!        end if
+
+
 !print *, '--rho--', rho(89,1,1), this%material(1)%consrv(89,1,1,1), this%material(2)%consrv(89,1,1,1)
     end subroutine
 
@@ -5671,7 +5698,7 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
 
         e = zero
         do i = 1,this%ns
-            e = e + this%material(i)%Ys * ( this%material(i)%eh + this%material(i)%eel )  ! Mass fraction weighted sum
+            e = e + this%material(i)%Ys * ( this%material(i)%eh  + this%material(i)%eel )  ! Mass fraction weighted sum
         end do
 
     end subroutine
@@ -5706,6 +5733,7 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
         sos = zero
         do i = 1,this%ns
             call this%material(i)%getSpeciesDensity(rho,rhom)
+
             call this%material(i)%hydro%get_sos2(rhom,p,sosm)
             !i:qf(.not. this%pEqb) then
                 call this%material(i)%elastic%get_sos2(rhom,sosm)
@@ -5736,6 +5764,7 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
               pgam = pgam +this%material(i)%VF*this%material(i)%hydro%onebygam_m1*this%material(i)%hydro%gam*this%material(i)%hydro%PInf
            !   sos = sos + this%material(i)%Ys*sosm
            enddo
+
            !sos = sqrt(abs(sos)) 
            !gam_m = 1/gam - 1
            !pinf_m = pgam /gam
@@ -5748,7 +5777,7 @@ subroutine equilibrateTemperature(this,mixRho,mixE,mixP,mixT,isub, nsubs)
         !    sos = sqrt(sosm)
         !    print *, 'mixt dens', rho(89,1,1), this%mumix(89,1,1)
         !endif
-!print *, '----Exiting mix%getSOS----'
+!iprint *, '----Exiting mix%getSOS----'
     end subroutine
 
     subroutine update_VF(this,isub,dt,rho,u,v,w,x,y,z,tsim,divu,src,periodicx, periodicy, periodicz,x_bc,y_bc,z_bc,sponge)

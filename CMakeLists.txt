@@ -57,7 +57,7 @@ else()
 	# Standard GNU compilers
 	elseif ( CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
 	    if ( CMAKE_BUILD_TYPE MATCHES "Release" )
-		set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -llapack -Wall -Wconversion -Wextra -Waliasing -ffree-form -ffree-line-length-none -ffast-math -march=native -funroll-loops -fno-protect-parens")
+		set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -llapack -Wall -Wconversion -Wextra -Waliasing -ffree-form -ffree-line-length-none -ffast-math -mcpu=native -funroll-loops -fno-protect-parens")
 	    elseif ( CMAKE_BUILD_TYPE MATCHES "Debug" )
 		set(CMAKE_Fortran_FLAGS "-Og -g -pg -llapack -ffree-form -ffree-line-length-none -fcheck=all -fbounds-check -ffpe-trap=zero,overflow,underflow -Wall -Wconversion -Wextra -Waliasing -Wsurprising -fbacktrace")
 	    endif()
