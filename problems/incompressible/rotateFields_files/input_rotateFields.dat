@@ -1,0 +1,14 @@
+&INPUT
+nx                    = 160 
+ny                    = 160
+nz                    = 160
+inputdir              = "/home/nghaisas/runs/rotateFields"   ! Directory for any input files
+outputdir             = "/home/nghaisas/runs/rotateFields"   ! Directory for all output files
+inputFile_TID         = 085413   ! TimeID of the restart file for the original data
+inputFile_RID         = 01       ! RunID of the restart file for the original data
+outputFile_TID        = 085413   ! TimeID of the restart file with rotated data
+outputFile_RID        = 02       ! RunID of the restart file with the rotated data
+zH                    =          ! what height to set the desired angle
+Lz                    =          ! domain height
+angle_with_x_deg      =          ! angle to set at zH
+/
