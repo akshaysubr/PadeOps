@@ -90,7 +90,7 @@ subroutine init(this, inputDir, ActuatorDisk_RotID, xG, yG, zG, ntryparam)
     ! Read input file for this turbine    
     write(tempname,"(A17,I4.4,A10)") "ActuatorDisk_Rot_", ActuatorDisk_RotID, "_input.inp"
     fname = InputDir(:len_trim(InputDir))//"/"//trim(tempname)
-
+  
     ioUnit = 55
     open(unit=ioUnit, file=trim(fname), form='FORMATTED', action="read")
     read(unit=ioUnit, NML=ACTUATOR_DISK)
@@ -103,7 +103,8 @@ subroutine init(this, inputDir, ActuatorDisk_RotID, xG, yG, zG, ntryparam)
     this%NacelleRad    = NacelleRad;      this%Omega      = Omega*rpm_to_radpersec
     this%sampleUpsDist = sampleUpsDist;   this%diagnostics_write_freq = diagnostics_write_freq
     this%Lref = reference_length;         this%isFan      = isFan
-
+    !print*,"diam,nacellerad",diam,NacelleRad
+    !print*,"reference length=",reference_length
     dx=xG(2,1,1)-xG(1,1,1); dy=yG(1,2,1)-yG(1,1,1); dz=zG(1,1,2)-zG(1,1,1)
     this%nxLoc = size(xG,1); this%nyLoc = size(xG,2); this%nzLoc = size(xG,3)
 
@@ -194,6 +195,7 @@ subroutine init(this, inputDir, ActuatorDisk_RotID, xG, yG, zG, ntryparam)
 
     if (this%Am_I_Active) then
         allocate(this%rbuff(size(xG,2),size(xG,3)))
+        
         call this%sample_on_circle_rtheta(diam/2.d0,xLoc,yLoc,zLoc,ntry)
         allocate(this%startEnds(7,size(this%xs)))
         allocate(this%startEnds_global(7))
@@ -335,7 +337,7 @@ subroutine init(this, inputDir, ActuatorDisk_RotID, xG, yG, zG, ntryparam)
          fname = trim(tempname)
          open(ioUnit,file=fname,form='formatted',action='write',status='unknown')
          write(ioUnit,*) 'VARIABLES="V1","V2","V3","V4","V5"'
-         write(ioUnit,'(a,i5)') 'ZONE T="radius, twist, chord, airfoil", F=POINT, I=', this%num_radial_elems
+         write(ioUnit,'(a,i5)') 'ZONE T="radius, twist, chord, solidity, airfoil", F=POINT, I=', this%num_radial_elems
          do j = 1, this%num_radial_elems
            write(ioUnit,'(4(e19.12,1x),i5)') this%radius_elem(j), this%twist_elem(j), this%chord_elem(j), this%solidity_elem(j), this%airfoilID_elem(j)
          enddo
@@ -377,7 +379,9 @@ subroutine read_blade_properties(this, InputDir, fname, reference_length)
       allocate(twistAngTable(num_table_entries,2))
       do k = 1, num_table_entries
         read(ioUnit, *) twistAngTable(k,:)
+        !print*,"twist angle=",twistAngTable(k,:)
       enddo
+      !  print*,"Lref=",this%Lref
       ! normalize radial distance by reference length
       twistAngTable(:,1) = twistAngTable(:,1)/reference_length
       ! convert twist angle from degrees to radians
@@ -417,7 +421,8 @@ subroutine read_blade_properties(this, InputDir, fname, reference_length)
         endif
     enddo
 
-    this%solidity_elem = this%num_blades*this%chord_elem/twopi/this%radius_elem
+    this%solidity_elem=this%num_blades*this%chord_elem/twopi/(this%radius_elem)       !change is *reference_length
+    !print*,"num of blade=",this%num_blades,"radius element=",this%radius_elem
     !where(this%radius_elem<this%NacelleRad)
     !    this%solidity_elem = one
     !end where
@@ -661,13 +666,13 @@ subroutine get_induction_factors(this,radind,dthrust,dtangen)
     dthrust = zero
     dtangen = zero
 
-    radius = this%radius_elem(radind)
+    radius = this%radius_elem(radind)!*this%Lref                                       ! extra added *this%Lref
     twist = this%twist_elem(radind)
     fac = this%solidity_elem(radind)!*radius
     if(radind < this%num_radial_elems) then
-      drad = this%radius_elem(radind+1)-this%radius_elem(radind)
+      drad = (this%radius_elem(radind+1)-this%radius_elem(radind))!*this%Lref          ! extra added *this%Lref
     else
-      drad = this%radius_elem(radind)-this%radius_elem(radind-1)
+      drad = (this%radius_elem(radind)-this%radius_elem(radind-1))!*this%Lref          ! extra added *this%Lref
     endif
 
    if(this%isFan) then   ! for fan
@@ -680,6 +685,10 @@ subroutine get_induction_factors(this,radind,dthrust,dtangen)
             indfac = 0.1d0  ! dummy
             aoa    = 0.01d0 ! dummy
             call this%get_cl_cd(radind, aoa, cl, cd)
+            fac = this%solidity_elem(radind)*pi*radius*drad*urel*urel
+            dthrust = -fac*(cl*cosphi-cd*sinphi)      !! note the minus sign
+            dtangen = -fac*(cl*sinphi+cd*cosphi)      !! and in force_x
+
         else
             indfac = 0.2; aprime = 0.1
             dfn = 0.0d0; dft = 0.0d0; aoa = 0.0d0; cl =0.0d0; cd =0.0d0; phi = 0.0d0
@@ -704,32 +713,41 @@ subroutine get_induction_factors(this,radind,dthrust,dtangen)
                 C_n = cl*cosphi-cd*sinphi
                 C_t = cl*sinphi+cd*cosphi
 
-                f_term = (1-fac*C_n/4)
-                s_term = (1-fac*C_n/2);
-                t_term = -fac*C_n/4 - (this%Omega *radius/(2*this%uface))*(this%Omega *radius/(2*this%uface))*(1-aprime_old)*(1-a
+                f_term = (1.0d0-fac*C_n/4.0d0)
+                s_term = (1.0d0-fac*C_n/2.0d0)
+                t_term = -fac*C_n/4.0d0 - (this%Omega *radius/(2*this%uface))*(this%Omega *radius/(2.0d0*this%uface))*((1-aprime_old)*(1-aprime_old))*fac*C_n
 
-                root_one = (-s_term + sqrt((s_term)*(s_term)-4*f_term*t_term))/(2*f_term);
-                root_two = (-s_term - sqrt((s_term)*(s_term)-4*f_term*t_term))/(2*f_term);
+                root_one = (-s_term + sqrt((s_term)*(s_term)-4.0d0*f_term*t_term))/(2.0d0*f_term)
+                root_two = (-s_term - sqrt((s_term)*(s_term)-4.0d0*f_term*t_term))/(2.0d0*f_term)
 
                 indfac   = max(root_one,root_two);
 
-                aprime=fac*(this%uface*this%uface*(1+indfac)*(1+indfac)+(this%Omega*radius*(1-aprime_old))*(this%Omega*radius*(1
+                aprime=fac*(this%uface*this%uface*(1.0d0+indfac)*(1.0d0+indfac)+(this%Omega*radius*(1.0d0-aprime_old))*(this%Omega*radius*(1.0d0-aprime_old)))*C_t &
+                                                                                /(4.0d0*this%uface*radius*this%Omega*(1.0d0+indfac))
+
                 ! stopping condition
                 error = max(abs(indfac-indfac_old), abs(aprime-aprime_old))
                 num_iter = num_iter + 1
             enddo
             !write(*,'(a,2(i5,1x),14(e19.12,1x))') '---deb---', radind, num_iter,unrm, utan, urel, &
             !                                 cosphi, sinphi, phi, aoa, cl, cd, dfn, dft,indfac, aprime, error
-             write(*,'(1(i5,1x),2(e19.12,1x))') radind,indfac, aprime
+            ! write(*,'(1(i5,1x),2(e19.12,1x))') radind,indfac, aprime
+            ! print*, "Is fan on:",this%isFan
 
             if(error>stopping_tol) then
               write(*,'(a,i5,1x,3(e19.12,1x),2(i5,1x),2(e19.12,1x))') 'stopping: ', num_iter, error, indfac, &
-                                                              aprime, radind, nrank, this%uface, this%Omega
+                                                            aprime, radind, nrank, this%uface, this%Omega
+            endif
+
+            fac = this%solidity_elem(radind)*pi*radius*drad*urel*urel
+            dthrust = -fac*(cl*cosphi-cd*sinphi)*cosphi      !! note the minus sign
+            dtangen = -fac*(cl*sinphi+cd*cosphi)*cosphi      !! and in force_x
+  
         endif
 
-        fac = this%solidity_elem(radind)*pi*radius*drad*urel*urel
-        dthrust = -fac*(cl*cosphi-cd*sinphi)*cosphi      !! note the minus sign
-        dtangen = -fac*(cl*sinphi+cd*cosphi)*cosphi      !! and in force_x
+        !fac = this%solidity_elem(radind)*pi*radius*drad*urel*urel
+        !dthrust = -fac*(cl*cosphi-cd*sinphi)*cosphi      !! note the minus sign
+        !dtangen = -fac*(cl*sinphi+cd*cosphi)*cosphi      !! and in force_x
 
     else     ! for turbine
 
@@ -846,7 +864,7 @@ subroutine get_RHS(this, u, v, w, rhsxvals, rhsyvals, rhszvals, inst_val)
 
         do i = 1, this%num_radial_elems
           call this%get_induction_factors(i,dthrust,dtangen)
-
+          !print '(a,2(e19.12,1x))',"dthrust,dtangen", dthrust,dtangen
           ist = (i-1)*this%num_azimut_elems + 1
           ien = i*this%num_azimut_elems
           this%force_x(ist:ien) = -dthrust*this%pfactor*this%normfactor
@@ -854,7 +872,7 @@ subroutine get_RHS(this, u, v, w, rhsxvals, rhsyvals, rhszvals, inst_val)
           this%force_z(ist:ien) = -dtangen*this%pfactor*this%normfactor*this%sin_azimut(1:this%num_azimut_elems)
 
           total_thrust = total_thrust - dthrust
-          total_torque = total_torque - dtangen*this%radius_elem(i)
+          total_torque = total_torque - dtangen*this%radius_elem(i)!*this%Lref                     !change was *this%Lref
         enddo
 
         !if(this%isFan) then
@@ -958,6 +976,8 @@ subroutine sample_on_circle_rtheta(this,R,xcen,ycen,zcen,np)
     allocate(this%xs(np**2),this%ys(np**2),this%zs(np**2))
 
     this%num_radial_elems = np
+    !print*,"np=",np
+    print*,"R=",R
     drad  = R/real(this%num_radial_elems,rkind)
     do i = 1, this%num_radial_elems
        this%radius_elem(i) = (real(i,rkind)-0.5_rkind)*drad
