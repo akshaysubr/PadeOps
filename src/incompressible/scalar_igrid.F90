@@ -309,6 +309,9 @@ subroutine init(this,gpC,gpE,spectC,spectE,sgsmodel,der,inputFile, inputDir,mesh
    this%lowbound = lowbound
    this%highbound = highbound
 
+   ! Forcing layer
+   this%Ftgt = Ftgt
+
    this%der => der
 
    this%isinviscid = isinviscid
