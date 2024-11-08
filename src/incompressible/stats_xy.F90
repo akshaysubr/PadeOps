@@ -975,6 +975,7 @@ module stats_xy_mod
                                                     dvdx_all, dvdy_all, dvdz_all, &
                                                     dwdx_all, dwdy_all, dwdz_all
           real(rkind) :: TwobyRe, OnebyRe
+          integer :: sca
 
           tke_budget = 0.d0
           OnebyRe = 1.d0/this%sim%Re
@@ -1121,6 +1122,18 @@ module stats_xy_mod
           if (this%sim%isStratified) then
               call this%covariance(this%wC, this%T, tke_budget(:,11))
               tke_budget(:,11) = -this%sim%buoyancyFact*tke_budget(:,11)
+              R11_budget(:,11) = 0.d0
+              R22_budget(:,11) = 0.d0
+              R33_budget(:,11) = 2.d0*tke_budget(:,11)
+          elseif (allocated(this%sim%scalars)) then
+              do sca = 1,size(this%sim%scalars)
+                  if (this%sim%scalars(sca)%amIActive()) then
+                      call this%covariance(this%wC, this%sim%scalars(sca)%F, this%zbuff(:,1))
+                      tke_budget(:,11) = tke_budget(:,11) - this%sim%scalars(sca)%get_buoyancyFact()*this%zbuff(:,1)
+                  else
+                      tke_budget(:,11) = 0.d0
+                  end if
+              end do
               R11_budget(:,11) = 0.d0
               R22_budget(:,11) = 0.d0
               R33_budget(:,11) = 2.d0*tke_budget(:,11)
