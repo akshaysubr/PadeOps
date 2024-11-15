@@ -1309,7 +1309,7 @@ module stats_xy_mod
 
           ! Force production
           call this%covariance(this%T,this%fT,this%TT_budget(:,12))
-
+          this%TT_budget(:,12) = 2*this%TT_budget(:,12)
 
       end subroutine
 
