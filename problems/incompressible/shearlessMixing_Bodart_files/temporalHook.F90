@@ -78,6 +78,16 @@ contains
                end do
             end if
         end if 
+        ! DEBUG ---------------------------------------------------
+        !if (gp%step == 20005) then
+        !    call gp.dumpFullField(gp%T,'potT')
+        !    call gp.dumpFullField(gp%dTdzC,'dTdz')
+        !    call gp.dumpFullField(gp%q3_TC,'q3TC')
+        !    call gp.dumpFullField(gp%kappaSGS,'kSGS')
+        !    call MPI_Barrier(MPI_COMM_WORLD,n)
+        !    stop
+        !end if
+        ! END DEBUG -----------------------------------------------
 
     end subroutine
 

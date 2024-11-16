@@ -50,32 +50,6 @@ program shearlessMixing
     call SM%start_io(.true.)                                   
     call SM%printDivergence()
 
-    ! DEBUG
-    !allocate(u(SM%gpC%xsz(1),SM%gpC%xsz(2),SM%gpC%xsz(3)))
-    !allocate(v(SM%gpC%xsz(1),SM%gpC%xsz(2),SM%gpC%xsz(3)))
-    !allocate(w(SM%gpC%xsz(1),SM%gpC%xsz(2),SM%gpC%xsz(3)))
-    !call readField3D(74,999999,trim(SM%inputdir),'uVel',u,SM%gpC)
-    !call readField3D(74,999999,trim(SM%inputdir),'vVel',v,SM%gpC)
-    !call readField3D(74,999999,trim(SM%inputdir),'wVel',w,SM%gpC)
-    !call SM%dumpFullField(u,'uVel',step=999)
-    !call SM%dumpFullField(v,'vVel',step=999)
-    !call SM%dumpFullField(w,'wVel',step=999)
-    !call decomp_2d_write_one(1,u,trim(SM%outputdir)//'/Run74_uVel_t009999.out',SM%gpC)
-    !call decomp_2d_write_one(1,v,trim(SM%outputdir)//'/Run74_vVel_t009999.out',SM%gpC)
-    !call decomp_2d_write_one(1,w,trim(SM%outputdir)//'/Run74_wVel_t009999.out',SM%gpC)
-    !! Dump ascii data
-    !do k = 1,SM%gpC%xsz(2)
-    !    write(tempname,'(A,I2.2,A,I3.3,A)')trim(SM%outputdir)//'/rank',nrank,'_u_y',k,'.out'
-    !    call write_2d_ascii(u(:,k,:),trim(tempname))
-    !    write(tempname,'(A,I2.2,A,I3.3,A)')trim(SM%outputdir)//'/rank',nrank,'_v_y',k,'.out'
-    !    call write_2d_ascii(v(:,k,:),trim(tempname))
-    !    write(tempname,'(A,I2.2,A,I3.3,A)')trim(SM%outputdir)//'/rank',nrank,'_w_y',k,'.out'
-    !    call write_2d_ascii(w(:,k,:),trim(tempname))
-    !end do
-    !call MPI_Barrier(MPI_COMM_WORLD,ierr)
-    !call gracefulExit('stop',ierr)
-    ! END DEBUG
-
     ! Initialize stats class instances
     if (num_stats_instances > 0) then
         allocate(stats(num_stats_instances))

@@ -5,6 +5,7 @@
        call this%dumpFullField(this%wC,'wVel')
        if (this%isStratified) call this%dumpFullField(this%T,'potT')
        call this%dump_scalar_fields() 
+       call this%dumpVisualizationInfo()
    end subroutine
    subroutine dumpRestartFile(this)
        use decomp_2d_io
