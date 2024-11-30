@@ -75,7 +75,11 @@ module CurvilCompressibleGrid
         real(rkind), dimension(:,:,:,:), allocatable :: xbuf, ybuf, zbuf   ! Buffers
         real(rkind), dimension(:,:,:,:), allocatable :: meshcvl            ! Curvilinear mesh variables
         real(rkind), dimension(:,:,:,:), allocatable :: metric_multipliers ! Curvilinear mesh metrics
+        real(rkind), dimension(:,:,:,:), allocatable :: LAD_multipliers    ! Directional LAD
         real(rkind), dimension(:,:,:,:), allocatable :: LAD_scale          ! Directional LAD- length scale
+        real(rkind), dimension(:,:,:,:), allocatable :: LAD_bulkij         ! Directional LAD- Bulk viscosity
+        real(rkind), dimension(:,:,:,:), allocatable :: LAD_muij           ! Directional LAD- Shear viscosity
+        real(rkind), dimension(:,:,:,:), allocatable :: LAD_kappaij        ! Directional LAD- Thermal Conductivity
         real(rkind), dimension(:,:,:,:), allocatable :: LAD_bulkstar       ! Directional LAD- Bulk viscosity
         real(rkind), dimension(:,:,:,:), allocatable :: LAD_mustar         ! Directional LAD- Shear viscosity
         real(rkind), dimension(:,:,:,:), allocatable :: LAD_kappastar      ! Directional LAD- Thermal Conductivity
@@ -120,6 +124,7 @@ module CurvilCompressibleGrid
         contains
             procedure          :: init
             procedure          :: init_curvilinear
+            procedure          :: init_LAD
             procedure          :: init_metric
             procedure          :: destroy_grid
             procedure          :: laplacian
@@ -293,25 +298,24 @@ contains
         allocate(this%InvJ(this%decomp%ysz(1),this%decomp%ysz(2),this%decomp%ysz(3)))
 
         call alloc_buffs(this%metric_multipliers, 9, "y", this%decomp)
-        this%dxidx   => this%metric_multipliers(:,:,:,1)
-        this%dxidy   => this%metric_multipliers(:,:,:,2)
-        this%dxidz   => this%metric_multipliers(:,:,:,3)
-        this%detadx  => this%metric_multipliers(:,:,:,4)
-        this%detady  => this%metric_multipliers(:,:,:,5)
-        this%detadz  => this%metric_multipliers(:,:,:,6)
-        this%dzetadx => this%metric_multipliers(:,:,:,7)
-        this%dzetady => this%metric_multipliers(:,:,:,8)
+        this%dxidx   => this%metric_multipliers(:,:,:,1); this%dxidy   => this%metric_multipliers(:,:,:,2)
+        this%dxidz   => this%metric_multipliers(:,:,:,3); this%detadx  => this%metric_multipliers(:,:,:,4)
+        this%detady  => this%metric_multipliers(:,:,:,5); this%detadz  => this%metric_multipliers(:,:,:,6)
+        this%dzetadx => this%metric_multipliers(:,:,:,7); this%dzetady => this%metric_multipliers(:,:,:,8)
         this%dzetadz => this%metric_multipliers(:,:,:,9)
-
+       
         ! Allocate buffers for Directional LAD terms
+        call alloc_buffs(this%LAD_multipliers, 27, "y", this%decomp)
         call alloc_buffs(this%LAD_scale, 3, "y", this%decomp)
         this%delta_Lxi   => this%LAD_scale(:,:,:,1)
         this%delta_Leta  => this%LAD_scale(:,:,:,2)
         this%delta_Lzeta => this%LAD_scale(:,:,:,3)
+        call alloc_buffs(this%LAD_bulkij, 9, "y", this%decomp)
+        call alloc_buffs(this%LAD_muij, 9, "y", this%decomp)
+        call alloc_buffs(this%LAD_kappaij, 9, "y", this%decomp)
         call alloc_buffs(this%LAD_bulkstar, 3, "y", this%decomp)
         call alloc_buffs(this%LAD_mustar, 3, "y", this%decomp)
         call alloc_buffs(this%LAD_kappastar, 3, "y", this%decomp)
-
         ! Allocate 2 buffers for each of the three decompositions
         call alloc_buffs(this%xbuf,nbufsx,"x",this%decomp)
         call alloc_buffs(this%ybuf,nbufsy,"y",this%decomp)
@@ -321,7 +325,6 @@ contains
         call meshgen(this%decomp,this%dxi, this%deta, this%dzeta, this%mesh, inputfile, &
                      this%meshcvl, this%dxs, this%dys, this%dzs, this%xbuf, this%zbuf)
 
-        !call this%init_curvilinear(inputfile)
 
         if (ns .LT. 1) call GracefulExit("Cannot have less than 1 species. Must have ns >= 1.",4568)
 
@@ -450,7 +453,7 @@ contains
         this%useSGS = useSGS
 
         if(this%useSGS) then
-            call alloc_buffs(this%tausgs,6,'y',this%decomp)
+            call alloc_buffs(this%tausgs,9,'y',this%decomp)
             call alloc_buffs(this%Qjsgs, 3,'y',this%decomp)
            
             allocate(this%sgsmodel)
@@ -466,6 +469,9 @@ contains
 
         ! Find metrics for curvilinear
         call this%init_curvilinear(inputfile)
+        ! Find Directional LAD multipliers 
+        call this%init_LAD(inputfile)
+
         ! Go to hooks if a different initialization is derired 
         call initfields(this%decomp, this%dxi, this%deta, this%dzeta, inputfile, this%mesh, this%fields, &
                         this%mix, this%tsim, this%tstop, this%dtfixed, tviz)
@@ -572,11 +578,15 @@ contains
         if (allocated(this%LAD_kappastar))      deallocate(this%LAD_kappastar)
         if (allocated(this%LAD_mustar))         deallocate(this%LAD_mustar)
         if (allocated(this%LAD_bulkstar))       deallocate(this%LAD_bulkstar)
+        if (allocated(this%LAD_kappaij))        deallocate(this%LAD_kappaij)
+        if (allocated(this%LAD_muij))           deallocate(this%LAD_muij)
+        if (allocated(this%LAD_bulkij))         deallocate(this%LAD_bulkij)
         if(associated(this%delta_Lzeta))        nullify(this%delta_Lzeta)
         if(associated(this%delta_Leta))         nullify(this%delta_Leta)
         if(associated(this%delta_Lxi))          nullify(this%delta_Lxi)
         if (allocated(this%LAD_scale))          deallocate(this%LAD_scale)
-
+        if (allocated(this%LAD_multipliers))    deallocate(this%LAD_multipliers)
+       
         if(associated(this%dzetadz)) nullify(this%dzetadz)
         if(associated(this%dzetady)) nullify(this%dzetady)
         if(associated(this%dzetadx)) nullify(this%dzetadx)
@@ -638,6 +648,104 @@ contains
         if (allocated(this%decomp)) deallocate(this%decomp) 
 
     end subroutine
+
+    subroutine init_LAD(this, inputfile)
+        use reductions,       only : P_MAXVAL,P_MINVAL
+        use decomp_2d,        only: decomp_info, nrank
+        use constants,        only: zero,eps,third,half,one,two,three,four,pi,eight
+        class(cvlgrid), intent(inout) :: this
+        character(len=* ) ,intent(in) :: inputfile
+
+        real(rkind), dimension(:,:,:,:), allocatable, target :: dxidxij
+        real(rkind), dimension(:,:,:),   pointer  :: dxdxi,dxdeta,dxdzeta,dydxi,dydeta,dydzeta,dzdxi,dzdeta,dzdzeta
+        real(rkind) :: f1,f2,f3,f4,f5,f6
+        allocate( dxidxij(this%decomp%ysz(1), this%decomp%ysz(2), this%decomp%ysz(3), 9) )
+        dxdxi => dxidxij(:,:,:,1); dxdeta => dxidxij(:,:,:,2); dxdzeta => dxidxij(:,:,:,3);
+        dydxi => dxidxij(:,:,:,4); dydeta => dxidxij(:,:,:,5); dydzeta => dxidxij(:,:,:,6);
+        dzdxi => dxidxij(:,:,:,7); dzdeta => dxidxij(:,:,:,8); dzdzeta => dxidxij(:,:,:,9);
+        
+        !!!! one-sided stencil for metric terms !!!!        
+        call this%gradient_cvl(this%x,dxdxi,dxdeta,dxdzeta,-[0,0], [0,0], [0,0])
+        call this%gradient_cvl(this%y,dydxi,dydeta,dydzeta, [0,0],-[0,0], [0,0])
+        call this%gradient_cvl(this%z,dzdxi,dzdeta,dzdzeta, [0,0], [0,0],-[0,0])
+        
+        this%LAD_multipliers(:,:,:,1)  = this%dxidx*dxdxi
+        this%LAD_multipliers(:,:,:,2)  = this%dxidy*dydxi
+        this%LAD_multipliers(:,:,:,3)  = this%dxidz*dzdxi
+        this%LAD_multipliers(:,:,:,4)  = this%dxidx*dxdeta
+        this%LAD_multipliers(:,:,:,5)  = this%dxidy*dydeta
+        this%LAD_multipliers(:,:,:,6)  = this%dxidz*dzdeta
+        this%LAD_multipliers(:,:,:,7)  = this%dxidx*dxdzeta
+        this%LAD_multipliers(:,:,:,8)  = this%dxidy*dydzeta
+        this%LAD_multipliers(:,:,:,9)  = this%dxidz*dzdzeta
+        this%LAD_multipliers(:,:,:,10) = this%detadx*dxdxi
+        this%LAD_multipliers(:,:,:,11) = this%detady*dydxi
+        this%LAD_multipliers(:,:,:,12) = this%detadz*dzdxi
+        this%LAD_multipliers(:,:,:,13) = this%detadx*dxdeta
+        this%LAD_multipliers(:,:,:,14) = this%detady*dydeta
+        this%LAD_multipliers(:,:,:,15) = this%detadz*dzdeta
+        this%LAD_multipliers(:,:,:,16) = this%detadx*dxdzeta
+        this%LAD_multipliers(:,:,:,17) = this%detady*dydzeta
+        this%LAD_multipliers(:,:,:,18) = this%detadz*dzdzeta
+        this%LAD_multipliers(:,:,:,19) = this%dzetadx*dxdxi
+        this%LAD_multipliers(:,:,:,20) = this%dzetady*dydxi
+        this%LAD_multipliers(:,:,:,21) = this%dzetadz*dzdxi
+        this%LAD_multipliers(:,:,:,22) = this%dzetadx*dxdeta
+        this%LAD_multipliers(:,:,:,23) = this%dzetady*dydeta
+        this%LAD_multipliers(:,:,:,24) = this%dzetadz*dzdeta
+        this%LAD_multipliers(:,:,:,25) = this%dzetadx*dxdzeta
+        this%LAD_multipliers(:,:,:,26) = this%dzetady*dydzeta
+        this%LAD_multipliers(:,:,:,27) = this%dzetadz*dzdzeta
+ 
+        this%delta_Lxi = (dxdxi*this%dxi)**2 + (dydxi*this%dxi)**2 + (dzdxi*this%dxi)**2 
+        this%delta_Lxi = sqrt(this%delta_Lxi)
+
+        this%delta_Leta = (dxdeta*this%deta)**2 + (dydeta*this%deta)**2 + (dzdeta*this%deta)**2 
+        this%delta_Leta = sqrt(this%delta_Leta)
+
+        this%delta_Lzeta = (dxdzeta*this%dzeta)**2 + (dydzeta*this%dzeta)**2 + (dzdzeta*this%dzeta)**2 
+        this%delta_Lzeta = sqrt(this%delta_Lzeta)
+        !! Print the max values 
+        f1 = P_MAXVAL(this%LAD_multipliers(:,:,:,1)); f2 = P_MAXVAL(this%LAD_multipliers(:,:,:,2))
+        f3 = P_MAXVAL(this%LAD_multipliers(:,:,:,3)); f4 = P_MAXVAL(this%LAD_multipliers(:,:,:,4))
+        f5 = P_MAXVAL(this%LAD_multipliers(:,:,:,5)); f6 = P_MAXVAL(this%LAD_multipliers(:,:,:,6))
+        if (nrank==0) then
+          print*,">>> LAD MULTIPLIERS <<<", f1, f2, f3, f4, f5, f6
+        end if
+
+        f1 = P_MAXVAL(this%LAD_multipliers(:,:,:,7)); f2 = P_MAXVAL(this%LAD_multipliers(:,:,:,8))
+        f3 = P_MAXVAL(this%LAD_multipliers(:,:,:,9)); f4 = P_MAXVAL(this%LAD_multipliers(:,:,:,10))
+        f5 = P_MAXVAL(this%LAD_multipliers(:,:,:,11)); f6 = P_MAXVAL(this%LAD_multipliers(:,:,:,12))
+        if (nrank==0) then
+          print*, f1, f2, f3, f4, f5, f6
+        end if
+
+        f1 = P_MAXVAL(this%LAD_multipliers(:,:,:,13)); f2 = P_MAXVAL(this%LAD_multipliers(:,:,:,14))
+        f3 = P_MAXVAL(this%LAD_multipliers(:,:,:,15)); f4 = P_MAXVAL(this%LAD_multipliers(:,:,:,16))
+        f5 = P_MAXVAL(this%LAD_multipliers(:,:,:,17)); f6 = P_MAXVAL(this%LAD_multipliers(:,:,:,18))
+        if (nrank==0) then
+          print*, f1, f2, f3, f4, f5, f6
+        end if
+
+        f1 = P_MAXVAL(this%LAD_multipliers(:,:,:,19)); f2 = P_MAXVAL(this%LAD_multipliers(:,:,:,20))
+        f3 = P_MAXVAL(this%LAD_multipliers(:,:,:,21)); f4 = P_MAXVAL(this%LAD_multipliers(:,:,:,22))
+        f5 = P_MAXVAL(this%LAD_multipliers(:,:,:,23)); f6 = P_MAXVAL(this%LAD_multipliers(:,:,:,24))
+        if (nrank==0) then
+          print*, f1, f2, f3, f4, f5, f6
+        end if
+
+        f1 = P_MAXVAL(this%LAD_multipliers(:,:,:,25)); f2 = P_MAXVAL(this%LAD_multipliers(:,:,:,26))
+        f3 = P_MAXVAL(this%LAD_multipliers(:,:,:,27)); 
+        if (nrank==0) then
+          print*, f1, f2, f3
+        end if
+
+        nullify(dzdxi); nullify(dzdeta); nullify(dzdzeta)
+        nullify(dydxi); nullify(dydeta); nullify(dydzeta)
+        nullify(dxdxi); nullify(dxdeta); nullify(dxdzeta)
+        deallocate(dxidxij)
+    end subroutine
+
 
     subroutine init_curvilinear(this, inputfile)
         use reductions,       only : P_MAXVAL,P_MINVAL
@@ -738,15 +846,6 @@ contains
             !enddo
             !close(10)
  
-            this%delta_Lxi = (dxdxi*this%dxi)**2 + (dydxi*this%dxi)**2 + (dzdxi*this%dxi)**2 
-            this%delta_Lxi = sqrt(this%delta_Lxi)
-
-            this%delta_Leta = (dxdeta*this%deta)**2 + (dydeta*this%deta)**2 + (dzdeta*this%deta)**2 
-            this%delta_Leta = sqrt(this%delta_Leta)
-
-            this%delta_Lzeta = (dxdzeta*this%dzeta)**2 + (dydzeta*this%dzeta)**2 + (dzdzeta*this%dzeta)**2 
-            this%delta_Lzeta = sqrt(this%delta_Lzeta)
-           
             deallocate(dxidxij)
             deallocate(Jacob_inv)
         endif
@@ -1171,14 +1270,17 @@ contains
 
                 ! Get tau tensor and q (heat conduction) vector. Put in components of duidxj
                 call this%get_tau( duidxj )      
-                allocate( tauij (this%nxp,this%nyp,this%nzp,6) )
+                allocate( tauij (this%nxp,this%nyp,this%nzp,9) )
                 ! Now, associate the pointers to understand what's going on better
-                tauij(:,:,:,1) = duidxj(:,:,:,tauxxidx)
-                tauij(:,:,:,2) = duidxj(:,:,:,tauxyidx)
-                tauij(:,:,:,3) = duidxj(:,:,:,tauxzidx)
-                tauij(:,:,:,4) = duidxj(:,:,:,tauyyidx)
-                tauij(:,:,:,5) = duidxj(:,:,:,tauyzidx)
-                tauij(:,:,:,6) = duidxj(:,:,:,tauzzidx)
+                tauij(:,:,:,1) = duidxj(:,:,:,1)
+                tauij(:,:,:,2) = duidxj(:,:,:,2)
+                tauij(:,:,:,3) = duidxj(:,:,:,3)
+                tauij(:,:,:,4) = duidxj(:,:,:,4)
+                tauij(:,:,:,5) = duidxj(:,:,:,5)
+                tauij(:,:,:,6) = duidxj(:,:,:,6)
+                tauij(:,:,:,7) = duidxj(:,:,:,7)
+                tauij(:,:,:,8) = duidxj(:,:,:,8)
+                tauij(:,:,:,9) = duidxj(:,:,:,9)
 
                 ! dt_tke = one
                 if (this%compute_tke_budget) then
@@ -1533,14 +1635,17 @@ contains
 
                     ! Get tau tensor and q (heat conduction) vector. Put in components of duidxj
                     call this%get_tau( duidxj )
-                    allocate( tauij (this%nxp,this%nyp,this%nzp,6) )
+                    allocate( tauij (this%nxp,this%nyp,this%nzp,9) )
                     ! Now, associate the pointers to understand what's going on better
-                    tauij(:,:,:,1) = duidxj(:,:,:,tauxxidx)
-                    tauij(:,:,:,2) = duidxj(:,:,:,tauxyidx)
-                    tauij(:,:,:,3) = duidxj(:,:,:,tauxzidx)
-                    tauij(:,:,:,4) = duidxj(:,:,:,tauyyidx)
-                    tauij(:,:,:,5) = duidxj(:,:,:,tauyzidx)
-                    tauij(:,:,:,6) = duidxj(:,:,:,tauzzidx)
+                    tauij(:,:,:,1) = duidxj(:,:,:,1)
+                    tauij(:,:,:,2) = duidxj(:,:,:,2)
+                    tauij(:,:,:,3) = duidxj(:,:,:,3)
+                    tauij(:,:,:,4) = duidxj(:,:,:,4)
+                    tauij(:,:,:,5) = duidxj(:,:,:,5)
+                    tauij(:,:,:,6) = duidxj(:,:,:,6)
+                    tauij(:,:,:,7) = duidxj(:,:,:,7)
+                    tauij(:,:,:,8) = duidxj(:,:,:,8)
+                    tauij(:,:,:,9) = duidxj(:,:,:,9)
                     deallocate( duidxj )
 
                     if (this%compute_tke_budget) then
@@ -1612,21 +1717,29 @@ contains
 
         call this%mix%get_sos(this%rho,this%p,cs)  ! Speed of sound - hydrodynamic part
 
-        dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dxs + ABS(this%v)/this%dys + ABS(this%w)/this%dzs &
-               + cs*sqrt( one/(this%dxs**two) + one/(this%dys**two) + one/(this%dzs**two) ))
-        dtmu   = 0.2_rkind * min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**2 / (P_MAXVAL( this%mu  / this%rho ) + eps)
-       
-        !dtbulk = 0.2_rkind * min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**2 / (P_MAXVAL( this%bulk/ this%rho ) + eps)
+        dtCFL  = this%CFL / P_MAXVAL( ABS(this%u)/this%dxi + ABS(this%v)/this%deta + ABS(this%w)/this%dzeta &
+               + cs*sqrt( one/(this%dxi**two) + one/(this%deta**two) + one/(this%dzeta**two) ))
+
+        !!! Directional LAD
+        dtmu_xi   = P_MINVAL(this%rho*(this%dxi**2)/(this%LAD_mustar(:,:,:,1) + eps))        
+        dtmu_eta  = P_MINVAL(this%rho*(this%deta**2)/(this%LAD_mustar(:,:,:,2) + eps))        
+        dtmu_zeta = P_MINVAL(this%rho*(this%dzeta**2)/(this%LAD_mustar(:,:,:,3) + eps))        
+        dtmu = 0.2_rkind * min(dtmu_xi,dtmu_eta,dtmu_zeta)
+
         dtbulk_xi   = P_MINVAL(this%rho*(this%dxi**2)/(this%LAD_bulkstar(:,:,:,1) + eps))        
         dtbulk_eta  = P_MINVAL(this%rho*(this%deta**2)/(this%LAD_bulkstar(:,:,:,2) + eps))        
         dtbulk_zeta = P_MINVAL(this%rho*(this%dzeta**2)/(this%LAD_bulkstar(:,:,:,3) + eps))        
         dtbulk = 0.2_rkind * min(dtbulk_xi,dtbulk_eta,dtbulk_zeta)
-        
-        dtkap  = 0.2_rkind * one / ( (P_MAXVAL( this%kap*this%T/(this%rho* (min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**4))))**(third) + eps)
-        dtdiff = 0.2_rkind * min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**2 / (P_MAXVAL( this%diff ) + eps)
 
-        !print*, nrank, P_MINVAL(this%dxs), P_MINVAL(this%dys), P_MINVAL(this%dzs)
+        dtkap_xi   = P_MINVAL(this%rho*(this%dxi**4)/(this%LAD_kappastar(:,:,:,1)*this%T + eps))        
+        dtkap_eta  = P_MINVAL(this%rho*(this%deta**4)/(this%LAD_kappastar(:,:,:,2)*this%T + eps))        
+        dtkap_zeta = P_MINVAL(this%rho*(this%dzeta**4)/(this%LAD_kappastar(:,:,:,3)*this%T + eps))        
+        dtkap = 0.2_rkind * min(dtkap_xi,dtkap_eta,dtkap_zeta)
 
+        dtdiff = 0.2_rkind * min(P_MINVAL(this%dxi),P_MINVAL(this%deta),P_MINVAL(this%dzeta))**2 / (P_MAXVAL( this%diff ) + eps)
+        !!! Scalar LAD
+        dtmu   = 0.2_rkind * min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**2 / (P_MAXVAL(this%mu  / this%rho ) + eps)
+        dtkap  = 0.2_rkind * one / ( (P_MAXVAL( this%kap*this%T/(this%rho*(min(P_MINVAL(this%dxs),P_MINVAL(this%dys),P_MINVAL(this%dzs))**4))))**(third) + eps)
         ! Use fixed time step if CFL <= 0
         if ( this%CFL .LE. zero ) then
             this%dt = this%dtfixed
@@ -1723,10 +1836,9 @@ contains
         real(rkind), dimension(:,:,:), pointer :: dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz
         real(rkind), dimension(:,:,:,:), pointer :: dYsdx, dYsdy, dYsdz
         real(rkind), dimension(:,:,:), pointer :: dTdx, dTdy, dTdz
-        real(rkind), dimension(:,:,:), pointer :: tauxx,tauxy,tauxz,tauyy,tauyz,tauzz
+        real(rkind), dimension(:,:,:), pointer :: tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,tauyx,tauzx,tauzy
         real(rkind), dimension(:,:,:), pointer :: qx,qy,qz
         real(rkind), dimension(:,:,:,:), pointer :: Jx,Jy,Jz
-        real(rkind), dimension(:,:,:), allocatable :: Skk
         integer :: i
         logical :: newTimeStep
 
@@ -1740,9 +1852,6 @@ contains
         call this%gradient(this%w,dwdx,dwdy,dwdz, this%x_bc, this%y_bc,-this%z_bc)
         call this%gradient(this%T,dTdx,dTdy,dTdz, this%x_bc, this%y_bc, this%z_bc)
 
-        allocate( Skk(this%decomp%ysz(1), this%decomp%ysz(2), this%decomp%ysz(3)) )
-        Skk = dudx + dvdy + dwdz
-       
         ! call this%getPhysicalProperties()
         call this%mix%get_transport_properties(this%p, this%T, this%Ys, this%mu, this%bulk, this%kap, this%diff)
 
@@ -1771,9 +1880,9 @@ contains
         ! Get tau tensor and q (heat conduction) vector. Put in components of duidxj
         call this%get_tau( duidxj )
         ! Now, associate the pointers to understand what's going on better
-        tauxx => duidxj(:,:,:,tauxxidx); tauxy => duidxj(:,:,:,tauxyidx); tauxz => duidxj(:,:,:,tauxzidx);
-                                         tauyy => duidxj(:,:,:,tauyyidx); tauyz => duidxj(:,:,:,tauyzidx);
-                                                                          tauzz => duidxj(:,:,:,tauzzidx);
+        tauxx => duidxj(:,:,:,1); tauxy => duidxj(:,:,:,2); tauxz => duidxj(:,:,:,3);
+        tauyx => duidxj(:,:,:,4); tauyy => duidxj(:,:,:,5); tauyz => duidxj(:,:,:,6);
+        tauzx => duidxj(:,:,:,7); tauzy => duidxj(:,:,:,8); tauzz => duidxj(:,:,:,9);
 
         ! Get species mass fluxes. Put in components on gradYs
         if (this%mix%ns .GT. 1) then
@@ -1788,10 +1897,13 @@ contains
             tauxx = tauxx - this%tausgs(:,:,:,1)
             tauxy = tauxy - this%tausgs(:,:,:,2)
             tauxz = tauxz - this%tausgs(:,:,:,3)
-            tauyy = tauyy - this%tausgs(:,:,:,4)
-            tauyz = tauyz - this%tausgs(:,:,:,5)
-            tauzz = tauzz - this%tausgs(:,:,:,6)
-
+            tauyy = tauyy - this%tausgs(:,:,:,5)
+            tauyz = tauyz - this%tausgs(:,:,:,6)
+            tauzz = tauzz - this%tausgs(:,:,:,9)
+            ! Directional LAD implemented => tauij is not symmetric => tausgs  also will be not symmetric
+            tauyx = tauyx - this%tausgs(:,:,:,4)
+            tauzx = tauzx - this%tausgs(:,:,:,7)
+            tauzy = tauzy - this%tausgs(:,:,:,8)
             qx = qx + this%Qjsgs(:,:,:,1)
             qy = qy + this%Qjsgs(:,:,:,2)
             qz = qz + this%Qjsgs(:,:,:,3)
@@ -1799,16 +1911,16 @@ contains
 
         rhs = zero
         call this%getRHS_xi  (              rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
 
         call this%getRHS_eta (              rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
 
         call this%getRHS_zeta(              rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
 
         ! KVM 2021 Call problem source hook
         if (this%forcing_mat) then
@@ -1820,17 +1932,15 @@ contains
         else
             call hook_source(this%decomp, this%mesh, this%fields, this%mix, this%tsim, rhs)
         endif
-        
-        deallocate(Skk)
     end subroutine
 
     subroutine getRHS_xi(       this,  rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
         class(cvlgrid), target, intent(inout) :: this
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, ncnsrv), intent(inout) :: rhs
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyy,tauyz,tauzz
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz,Skk
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, this%mix%ns), intent(in) :: Jx,Jy,Jz
 
         real(rkind), dimension(this%nxp, this%nyp, this%nzp) :: flux
@@ -1848,8 +1958,8 @@ contains
         ytmp1 = this%dxidx*this%u+ this%dxidy*this%v+ this%dxidz*this%w   !   U^hat
         !ytmp2 is included in species equation
         ytmp3 = this%dxidx*tauxx + this%dxidy*tauxy + this%dxidz*tauxz    ! \tau_xx^hat
-        ytmp4 = this%dxidx*tauxy + this%dxidy*tauyy + this%dxidz*tauyz    ! \tau_xy^hat
-        ytmp5 = this%dxidx*tauxz + this%dxidy*tauyz + this%dxidz*tauzz    ! \tau_xz^hat
+        ytmp4 = this%dxidx*tauyx + this%dxidy*tauyy + this%dxidz*tauyz    ! \tau_xy^hat
+        ytmp5 = this%dxidx*tauzx + this%dxidy*tauzy + this%dxidz*tauzz    ! \tau_xz^hat
         ytmp6 = this%dxidx*qx    + this%dxidy*qy    + this%dxidz*qz       ! \q_x^hat
 
         ytmp1 = ytmp1*this%InvJ; ytmp3 = ytmp3*this%InvJ
@@ -1878,29 +1988,28 @@ contains
 
 
         !flux = this%Wcnsrv(:,:,:,mom_index  )*this%u + this%p - tauxx ! x-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index  )*ytmp1 + this%dxidx*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,1)) - ytmp3 ! x-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index  )*ytmp1 + this%dxidx*this%InvJ*this%p - ytmp3 ! x-momentum
         call transpose_y_to_x(flux,xtmp1,this%decomp)
         call this%der%ddxi(xtmp1,xtmp2, this%x_bc(1), this%x_bc(2)) ! Symmetric for x-momentum
         call transpose_x_to_y(xtmp2,flux,this%decomp)
         rhs(:,:,:,mom_index  ) = rhs(:,:,:,mom_index  ) - flux
 
         !flux = this%Wcnsrv(:,:,:,mom_index  )*this%v          - tauxy ! y-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+1)*ytmp1 + this%dxidy*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,1)) - ytmp4 ! y-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+1)*ytmp1 + this%dxidy*this%InvJ*this%p - ytmp4 ! y-momentum
         call transpose_y_to_x(flux,xtmp1,this%decomp)
         call this%der%ddxi(xtmp1,xtmp2,-this%x_bc(1),-this%x_bc(2)) ! Anti-symmetric for all but x-momentum
         call transpose_x_to_y(xtmp2,flux,this%decomp)
         rhs(:,:,:,mom_index+1) = rhs(:,:,:,mom_index+1) - flux
 
         !flux = this%Wcnsrv(:,:,:,mom_index  )*this%w          - tauxz ! z-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%dxidz*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,1)) - ytmp5 ! z-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%dxidz*this%InvJ*this%p - ytmp5 ! z-momentum
         call transpose_y_to_x(flux,xtmp1,this%decomp)
         call this%der%ddxi(xtmp1,xtmp2,-this%x_bc(1),-this%x_bc(2)) ! Anti-symmetric for all but x-momentum
         call transpose_x_to_y(xtmp2,flux,this%decomp)
         rhs(:,:,:,mom_index+2) = rhs(:,:,:,mom_index+2) - flux
 
         !flux = (this%Wcnsrv(:,:,:, TE_index  ) + this%p - tauxx)*this%u - this%v*tauxy - this%w*tauxz + qx ! Total Energy
-        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 &
-                - Skk*this%LAD_bulkstar(:,:,:,1)*this%InvJ*(this%u*this%dxidx + this%v*this%dxidy + this%w*this%dxidz)
+        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 
         call transpose_y_to_x(flux,xtmp1,this%decomp)
         call this%der%ddxi(xtmp1,xtmp2,-this%x_bc(1),-this%x_bc(2)) ! Anti-symmetric for all but x-momentum
         call transpose_x_to_y(xtmp2,flux,this%decomp)
@@ -1909,12 +2018,12 @@ contains
     end subroutine
 
     subroutine getRHS_eta(       this,  rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
         class(cvlgrid), target, intent(inout) :: this
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, ncnsrv), intent(inout) :: rhs
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyy,tauyz,tauzz
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz,Skk
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, this%mix%ns), intent(in) :: Jx,Jy,Jz
 
         real(rkind), dimension(this%nxp, this%nyp, this%nzp) :: flux
@@ -1929,8 +2038,8 @@ contains
         ytmp1 = this%detadx*this%u+ this%detady*this%v+ this%detadz*this%w
         !ytmp2 is included in species equation and for transpose
         ytmp3 = this%detadx*tauxx + this%detady*tauxy + this%detadz*tauxz
-        ytmp4 = this%detadx*tauxy + this%detady*tauyy + this%detadz*tauyz
-        ytmp5 = this%detadx*tauxz + this%detady*tauyz + this%detadz*tauzz
+        ytmp4 = this%detadx*tauyx + this%detady*tauyy + this%detadz*tauyz
+        ytmp5 = this%detadx*tauzx + this%detady*tauzy + this%detadz*tauzz
         ytmp6 = this%detadx*qx    + this%detady*qy    + this%detadz*qz
 
         ytmp1 = ytmp1*this%InvJ; ytmp3 = ytmp3*this%InvJ
@@ -1954,35 +2063,34 @@ contains
         end select
 
         !flux = this%Wcnsrv(:,:,:,mom_index+1)*this%u          - tauxy ! x-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index  )*ytmp1 + this%detadx*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,2)) - ytmp3 ! x-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index  )*ytmp1 + this%detadx*this%InvJ*this%p - ytmp3 ! x-momentum
         call this%der%ddeta(flux,ytmp2,-this%y_bc(1),-this%y_bc(2)) ! Anti-symmetric for all but y-momentum
         rhs(:,:,:,mom_index  ) = rhs(:,:,:,mom_index  ) - ytmp2
 
         !flux = this%Wcnsrv(:,:,:,mom_index+1)*this%v + this%p - tauyy ! y-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+1)*ytmp1 + this%detady*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,2)) - ytmp4 ! y-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+1)*ytmp1 + this%detady*this%InvJ*this%p - ytmp4 ! y-momentum
         call this%der%ddeta(flux,ytmp2, this%y_bc(1), this%y_bc(2)) ! Symmetric for y-momentum
         rhs(:,:,:,mom_index+1) = rhs(:,:,:,mom_index+1) - ytmp2
 
         !flux = this%Wcnsrv(:,:,:,mom_index+1)*this%w          - tauyz ! z-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%detadz*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,2)) - ytmp5 ! z-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%detadz*this%InvJ*this%p - ytmp5 ! z-momentum
         call this%der%ddeta(flux,ytmp2,-this%y_bc(1),-this%y_bc(2)) ! Anti-symmetric for all but y-momentum
         rhs(:,:,:,mom_index+2) = rhs(:,:,:,mom_index+2) - ytmp2
 
         !flux = (this%Wcnsrv(:,:,:, TE_index  ) + this%p - tauyy)*this%v - this%u*tauxy - this%w*tauyz + qy ! Total Energy
-        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 & 
-                - Skk*this%LAD_bulkstar(:,:,:,2)*this%InvJ*(this%u*this%detadx + this%v*this%detady + this%w*this%detadz)
+        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 
         call this%der%ddeta(flux,ytmp2,-this%y_bc(1),-this%y_bc(2)) ! Anti-symmetric for all but y-momentum
         rhs(:,:,:, TE_index  ) = rhs(:,:,:, TE_index  ) - ytmp2
 
     end subroutine
 
     subroutine getRHS_zeta(       this,  rhs,&
-                           tauxx,tauxy,tauxz,tauyy,tauyz,tauzz,&
-                               qx,qy,qz,Jx,Jy,Jz,Skk )
+                           tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz,&
+                               qx,qy,qz,Jx,Jy,Jz )
         class(cvlgrid), target, intent(inout) :: this
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, ncnsrv), intent(inout) :: rhs
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyy,tauyz,tauzz
-        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz,Skk
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: tauxx,tauxy,tauxz,tauyx,tauyy,tauyz,tauzx,tauzy,tauzz
+        real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: qx,qy,qz
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, this%mix%ns), intent(in) :: Jx,Jy,Jz
 
         real(rkind), dimension(this%nxp, this%nyp, this%nzp) :: flux
@@ -2000,8 +2108,8 @@ contains
         ytmp1 = this%dzetadx*this%u+ this%dzetady*this%v+ this%dzetadz*this%w
         !ytmp2 is included in species equation
         ytmp3 = this%dzetadx*tauxx + this%dzetady*tauxy + this%dzetadz*tauxz
-        ytmp4 = this%dzetadx*tauxy + this%dzetady*tauyy + this%dzetadz*tauyz
-        ytmp5 = this%dzetadx*tauxz + this%dzetady*tauyz + this%dzetadz*tauzz
+        ytmp4 = this%dzetadx*tauyx + this%dzetady*tauyy + this%dzetadz*tauyz
+        ytmp5 = this%dzetadx*tauzx + this%dzetady*tauzy + this%dzetadz*tauzz
         ytmp6 = this%dzetadx*qx    + this%dzetady*qy    + this%dzetadz*qz
 
         ytmp1 = ytmp1*this%InvJ; ytmp3 = ytmp3*this%InvJ
@@ -2029,29 +2137,28 @@ contains
         end select
 
         !flux = this%Wcnsrv(:,:,:,mom_index+2)*this%u          - tauxz ! x-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index   )*ytmp1 + this%dzetadx*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,3)) - ytmp3 !x-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index   )*ytmp1 + this%dzetadx*this%InvJ*this%p - ytmp3 ! x-momentum
         call transpose_y_to_z(flux,ztmp1,this%decomp)
         call this%der%ddzeta(ztmp1,ztmp2,-this%z_bc(1),-this%z_bc(2)) ! Anti-symmetric for all but z-momentum
         call transpose_z_to_y(ztmp2,flux,this%decomp)
         rhs(:,:,:,mom_index  ) = rhs(:,:,:,mom_index  ) - flux
 
         !flux = this%Wcnsrv(:,:,:,mom_index+2)*this%v          - tauyz ! y-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+1 )*ytmp1 + this%dzetady*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,3)) - ytmp4 !y-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+1 )*ytmp1 + this%dzetady*this%InvJ*this%p - ytmp4 ! y-momentum
         call transpose_y_to_z(flux,ztmp1,this%decomp)
         call this%der%ddzeta(ztmp1,ztmp2,-this%z_bc(1),-this%z_bc(2)) ! Anti-symmetric for all but z-momentum
         call transpose_z_to_y(ztmp2,flux,this%decomp)
         rhs(:,:,:,mom_index+1) = rhs(:,:,:,mom_index+1) - flux
 
         !flux = this%Wcnsrv(:,:,:,mom_index+2)*this%w + this%p - tauzz ! z-momentum
-        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%dzetadz*this%InvJ*(this%p-Skk*this%LAD_bulkstar(:,:,:,3)) - ytmp5 !z-momentum
+        flux = this%Wcnsrv(:,:,:,mom_index+2 )*ytmp1 + this%dzetadz*this%InvJ*this%p - ytmp5 ! z-momentum
         call transpose_y_to_z(flux,ztmp1,this%decomp)
         call this%der%ddzeta(ztmp1,ztmp2, this%z_bc(1), this%z_bc(2)) ! Symmetric for z-momentum
         call transpose_z_to_y(ztmp2,flux,this%decomp)
         rhs(:,:,:,mom_index+2) = rhs(:,:,:,mom_index+2) - flux
 
         !flux = (this%Wcnsrv(:,:,:, TE_index  ) + this%p - tauzz)*this%w - this%u*tauxz - this%v*tauyz + qz ! Total Energy
-        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 & 
-                - Skk*this%LAD_bulkstar(:,:,:,3)*this%InvJ*(this%u*this%dzetadx + this%v*this%dzetady + this%w*this%dzetadz)
+        flux  = (this%Wcnsrv(:,:,:, TE_index  ) + this%p)*ytmp1 - this%u*ytmp3 - this%v*ytmp4 - this%w*ytmp5 + ytmp6 
         call transpose_y_to_z(flux,ztmp1,this%decomp)
         call this%der%ddzeta(ztmp1,ztmp2,-this%z_bc(1),-this%z_bc(2)) ! Anti-symmetric for all but z-momentum
         call transpose_z_to_y(ztmp2,flux,this%decomp)
@@ -2064,6 +2171,7 @@ contains
                             dwdx, dwdy, dwdz,&
                            dYsdx,dYsdy,dYsdz )
         use reductions, only: P_MAXVAL
+        use decomp_2d,        only: decomp_info, nrank
         class(cvlgrid), target, intent(inout) :: this
         real(rkind), dimension(this%nxp, this%nyp, this%nzp), intent(in) :: dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz
         real(rkind), dimension(this%nxp, this%nyp, this%nzp, this%mix%ns), optional, intent(in) :: dYsdx,dYsdy,dYsdz
@@ -2074,6 +2182,7 @@ contains
         real(rkind), dimension(:,:,:), pointer :: xtmp1,xtmp2
         real(rkind), dimension(:,:,:), pointer :: ytmp1,ytmp2,ytmp3,ytmp4,ytmp5,ytmp6
         real(rkind), dimension(:,:,:), pointer :: ztmp1,ztmp2
+        real(rkind)  :: f1,f2,f3,f4,f5,f6,f7,f8,f9      
 
         xtmp1 => this%xbuf(:,:,:,1); xtmp2 => this%xbuf(:,:,:,2)
         
@@ -2089,6 +2198,87 @@ contains
                             +             dvdy**2 + half*(dwdy+dvdz)**2 &
                                                   +             dwdz**2 )
         
+        ! Get 4th derivative in X
+        call transpose_y_to_x(func,xtmp1,this%decomp)
+        call this%der%d2dxi2(xtmp1,xtmp2,this%x_bc(1),this%x_bc(2))
+        call this%der%d2dxi2(xtmp2,xtmp1,this%x_bc(1),this%x_bc(2))
+        call transpose_x_to_y(xtmp1,ytmp1,this%decomp) 
+        mustar = ytmp1*(this%dxi**4)
+        
+        ! Get 4th derivative in Z
+        call transpose_y_to_z(func,ztmp1,this%decomp)
+        call this%der%d2dzeta2(ztmp1,ztmp2,this%z_bc(1),this%z_bc(2))
+        call this%der%d2dzeta2(ztmp2,ztmp1,this%z_bc(1),this%z_bc(2))
+        call transpose_z_to_y(ztmp1,ytmp1,this%decomp)
+        ytmp2 = ytmp1*(this%dzeta**4)
+        mustar = mustar + ytmp2
+        
+        ! Get 4th derivative in Y
+        call this%der%d2deta2(func,ytmp1,this%y_bc(1),this%y_bc(2))
+        call this%der%d2deta2(ytmp1,ytmp2,this%y_bc(1),this%y_bc(2))
+        ytmp1 = ytmp2*(this%deta**4)
+        mustar = mustar + ytmp1
+
+        mustar = this%Cmu*this%rho*abs(mustar)
+        
+        ! Filter mustar
+        call this%filter(mustar, this%gfil, 2, this%x_bc, this%y_bc, this%z_bc)
+        
+        ytmp1 =  mustar * (this%delta_Lxi**2)
+        ytmp2 =  mustar * (this%delta_Leta**2)
+        ytmp3 =  mustar * (this%delta_Lzeta**2)
+ 
+        this%LAD_mustar(:,:,:,1) = ytmp1
+        this%LAD_mustar(:,:,:,2) = ytmp2
+        this%LAD_mustar(:,:,:,3) = ytmp3
+
+        this%LAD_muij(:,:,:,1) = this%LAD_multipliers(:,:,:,1) * this%LAD_mustar(:,:,:,1)  +  &
+                                 this%LAD_multipliers(:,:,:,2) * this%LAD_mustar(:,:,:,2)  +  &
+                                 this%LAD_multipliers(:,:,:,3) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,2) = this%LAD_multipliers(:,:,:,4) * this%LAD_mustar(:,:,:,1)  +  &
+                                 this%LAD_multipliers(:,:,:,5) * this%LAD_mustar(:,:,:,2)  +  &
+                                 this%LAD_multipliers(:,:,:,6) * this%LAD_mustar(:,:,:,3)
+      
+        this%LAD_muij(:,:,:,3) = this%LAD_multipliers(:,:,:,7) * this%LAD_mustar(:,:,:,1)  +  &
+                                 this%LAD_multipliers(:,:,:,8) * this%LAD_mustar(:,:,:,2)  +  &
+                                 this%LAD_multipliers(:,:,:,9) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,4) = this%LAD_multipliers(:,:,:,10) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,11) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,12) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,5) = this%LAD_multipliers(:,:,:,13) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,14) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,15) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,6) = this%LAD_multipliers(:,:,:,16) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,17) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,18) * this%LAD_mustar(:,:,:,3)
+       
+        this%LAD_muij(:,:,:,7) = this%LAD_multipliers(:,:,:,19) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,20) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,21) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,8) = this%LAD_multipliers(:,:,:,22) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,23) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,24) * this%LAD_mustar(:,:,:,3)
+
+        this%LAD_muij(:,:,:,9) = this%LAD_multipliers(:,:,:,25) * this%LAD_mustar(:,:,:,1) +  &
+                                 this%LAD_multipliers(:,:,:,26) * this%LAD_mustar(:,:,:,2) +  &
+                                 this%LAD_multipliers(:,:,:,27) * this%LAD_mustar(:,:,:,3)
+
+        !!! Print the max values 
+        !f1 = P_MAXVAL(this%LAD_muij(:,:,:,1)); f2 = P_MAXVAL(this%LAD_muij(:,:,:,2))
+        !f3 = P_MAXVAL(this%LAD_muij(:,:,:,3)); f4 = P_MAXVAL(this%LAD_muij(:,:,:,4))
+        !f5 = P_MAXVAL(this%LAD_muij(:,:,:,5)); f6 = P_MAXVAL(this%LAD_muij(:,:,:,6))
+        !f7 = P_MAXVAL(this%LAD_muij(:,:,:,7)); f8 = P_MAXVAL(this%LAD_muij(:,:,:,8))
+        !f9 = P_MAXVAL(this%LAD_muij(:,:,:,9))
+        !if (nrank==0) then
+        !  print*, ">>> SHEAR VISCOSITY <<<",f1, f2, f3, f4, f5, f6, f7, f8, f9
+        !end if
+       
+        ! -------- Artificial Scalar Shear Viscosity --------
         ! Get 4th derivative in X
         call transpose_y_to_x(func,xtmp1,this%decomp)
         call this%der%d2dxi2(xtmp1,xtmp2,this%x_bc(1),this%x_bc(2))
@@ -2114,8 +2304,10 @@ contains
         
         ! Filter mustar
         call this%filter(mustar, this%gfil, 2, this%x_bc, this%y_bc, this%z_bc)
-        
+        this%mu   = this%mu   + mustar
+
         ! -------- Artificial Directional Bulk Viscosity --------
+        
         func = dudx + dvdy + dwdz      ! dilatation
         
         ! Step 1: Get components of grad(rho) squared individually
@@ -2161,6 +2353,128 @@ contains
         this%LAD_bulkstar(:,:,:,2) = ytmp2
         this%LAD_bulkstar(:,:,:,3) = ytmp3
         
+        this%LAD_bulkij(:,:,:,1) = this%LAD_multipliers(:,:,:,1) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,2) * ytmp2 + this%LAD_multipliers(:,:,:,3) * ytmp3
+
+        this%LAD_bulkij(:,:,:,2) = this%LAD_multipliers(:,:,:,4) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,5) * ytmp2 + this%LAD_multipliers(:,:,:,6) * ytmp3
+      
+        this%LAD_bulkij(:,:,:,3) = this%LAD_multipliers(:,:,:,7) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,8) * ytmp2 + this%LAD_multipliers(:,:,:,9) * ytmp3
+
+        this%LAD_bulkij(:,:,:,4) = this%LAD_multipliers(:,:,:,10) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,11) * ytmp2 + this%LAD_multipliers(:,:,:,12) * ytmp3
+
+        this%LAD_bulkij(:,:,:,5) = this%LAD_multipliers(:,:,:,13) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,14) * ytmp2 + this%LAD_multipliers(:,:,:,15) * ytmp3
+
+        this%LAD_bulkij(:,:,:,6) = this%LAD_multipliers(:,:,:,16) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,17) * ytmp2 + this%LAD_multipliers(:,:,:,18) * ytmp3
+       
+        this%LAD_bulkij(:,:,:,7) = this%LAD_multipliers(:,:,:,19) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,20) * ytmp2 + this%LAD_multipliers(:,:,:,21) * ytmp3
+
+        this%LAD_bulkij(:,:,:,8) = this%LAD_multipliers(:,:,:,22) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,23) * ytmp2 + this%LAD_multipliers(:,:,:,24) * ytmp3
+
+        this%LAD_bulkij(:,:,:,9) = this%LAD_multipliers(:,:,:,25) * ytmp1 +  &
+                                   this%LAD_multipliers(:,:,:,26) * ytmp2 + this%LAD_multipliers(:,:,:,27) * ytmp3
+
+        !!! Print the max values 
+        !f1 = P_MAXVAL(this%LAD_bulkij(:,:,:,1)); f2 = P_MAXVAL(this%LAD_bulkij(:,:,:,2))
+        !f3 = P_MAXVAL(this%LAD_bulkij(:,:,:,3)); f4 = P_MAXVAL(this%LAD_bulkij(:,:,:,4))
+        !f5 = P_MAXVAL(this%LAD_bulkij(:,:,:,5)); f6 = P_MAXVAL(this%LAD_bulkij(:,:,:,6))
+        !f7 = P_MAXVAL(this%LAD_bulkij(:,:,:,7)); f8 = P_MAXVAL(this%LAD_bulkij(:,:,:,8))
+        !f9 = P_MAXVAL(this%LAD_bulkij(:,:,:,9))
+        !if (nrank==0) then
+        !  print*, ">>> BULK VISCOSITY <<<",f1, f2, f3, f4, f5, f6, f7, f8, f9
+        !end if
+
+        ! -------- Artificial Conductivity --------
+
+        ! Step 1: Get components of grad(e) squared individually
+        call this%gradient_cvl(this%e,ytmp1,ytmp2,ytmp3,this%x_bc,this%y_bc,this%z_bc) ! Does not use any Y buffers
+        ytmp4 = ytmp1*ytmp1 + ytmp2*ytmp2 + ytmp3*ytmp3
+        ytmp5 = sqrt(ytmp4)
+        ytmp6 = ytmp1*this%delta_Lxi
+        ytmp1 = ytmp6/(ytmp5+eps)   !Delta_Lsxi
+        ytmp6 = ytmp2*this%delta_Leta
+        ytmp2 = ytmp6/(ytmp5+eps)   !Delta_Lseta
+        ytmp6 = ytmp3*this%delta_Lzeta
+        ytmp3 = ytmp6/(ytmp5+eps)   !Delta_Lszeta
+
+        ! Step 2: Get 4th derivative in X
+        call transpose_y_to_x(this%e,xtmp1,this%decomp)
+        call this%der%d2dxi2(xtmp1,xtmp2,this%x_bc(1),this%x_bc(2))
+        call this%der%d2dxi2(xtmp2,xtmp1,this%x_bc(1),this%x_bc(2))
+        xtmp2 = xtmp1*this%dxi**4
+        call transpose_x_to_y(xtmp2,ytmp4,this%decomp)
+        kapstar = ytmp4  
+
+        ! Step 3: Get 4th derivative in Z
+        call transpose_y_to_z(this%e,ztmp1,this%decomp)
+        call this%der%d2dzeta2(ztmp1,ztmp2,this%z_bc(1),this%z_bc(2))
+        call this%der%d2dzeta2(ztmp2,ztmp1,this%z_bc(1),this%z_bc(2))
+        ztmp2 = ztmp1*this%dzeta**4
+        call transpose_z_to_y(ztmp2,ytmp4,this%decomp)
+        kapstar = kapstar + ytmp4
+
+        ! Step 4: Get 4th derivative in Y
+        call this%der%d2deta2(this%e,ytmp4,this%y_bc(1),this%y_bc(2))
+        call this%der%d2deta2(ytmp4,ytmp5,this%y_bc(1),this%y_bc(2))
+        ytmp4 = ytmp5*this%deta**4
+        kapstar = kapstar + ytmp4  
+
+        ! Now, all ytmps are free to use
+        call this%mix%get_sos(this%rho,this%p,ytmp4)  ! Speed of sound
+        kapstar = this%Ckap*this%rho*ytmp4*abs(kapstar)/this%T
+        ! Filter kapstar
+        call this%filter(kapstar, this%gfil, 2, this%x_bc, this%y_bc, this%z_bc)
+        ytmp1 =  kapstar * this%delta_Lxi       !ytmp1???
+        ytmp2 =  kapstar * this%delta_Leta      !ytmp2???
+        ytmp3 =  kapstar * this%delta_Lzeta     !ytmp3???
+
+        this%LAD_kappastar(:,:,:,1) = ytmp1
+        this%LAD_kappastar(:,:,:,2) = ytmp2
+        this%LAD_kappastar(:,:,:,3) = ytmp3
+        
+        this%LAD_kappaij(:,:,:,1) = this%LAD_multipliers(:,:,:,1) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,2) * ytmp2 + this%LAD_multipliers(:,:,:,3) * ytmp3
+
+        this%LAD_kappaij(:,:,:,2) = this%LAD_multipliers(:,:,:,4) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,5) * ytmp2 + this%LAD_multipliers(:,:,:,6) * ytmp3
+      
+        this%LAD_kappaij(:,:,:,3) = this%LAD_multipliers(:,:,:,7) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,8) * ytmp2 + this%LAD_multipliers(:,:,:,9) * ytmp3
+
+        this%LAD_kappaij(:,:,:,4) = this%LAD_multipliers(:,:,:,10) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,11) * ytmp2 + this%LAD_multipliers(:,:,:,12) * ytmp3
+
+        this%LAD_kappaij(:,:,:,5) = this%LAD_multipliers(:,:,:,13) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,14) * ytmp2 + this%LAD_multipliers(:,:,:,15) * ytmp3
+
+        this%LAD_kappaij(:,:,:,6) = this%LAD_multipliers(:,:,:,16) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,17) * ytmp2 + this%LAD_multipliers(:,:,:,18) * ytmp3
+       
+        this%LAD_kappaij(:,:,:,7) = this%LAD_multipliers(:,:,:,19) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,20) * ytmp2 + this%LAD_multipliers(:,:,:,21) * ytmp3
+ 
+        this%LAD_kappaij(:,:,:,8) = this%LAD_multipliers(:,:,:,22) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,23) * ytmp2 + this%LAD_multipliers(:,:,:,24) * ytmp3
+
+        this%LAD_kappaij(:,:,:,9) = this%LAD_multipliers(:,:,:,25) * ytmp1 +  &
+                                    this%LAD_multipliers(:,:,:,26) * ytmp2 + this%LAD_multipliers(:,:,:,27) * ytmp3
+
+        !!! Print the max values 
+        !f1 = P_MAXVAL(this%LAD_kappaij(:,:,:,1)); f2 = P_MAXVAL(this%LAD_kappaij(:,:,:,2))
+        !f3 = P_MAXVAL(this%LAD_kappaij(:,:,:,3)); f4 = P_MAXVAL(this%LAD_kappaij(:,:,:,4))
+        !f5 = P_MAXVAL(this%LAD_kappaij(:,:,:,5)); f6 = P_MAXVAL(this%LAD_kappaij(:,:,:,6))
+        !f7 = P_MAXVAL(this%LAD_kappaij(:,:,:,7)); f8 = P_MAXVAL(this%LAD_kappaij(:,:,:,8))
+        !f9 = P_MAXVAL(this%LAD_kappaij(:,:,:,9))
+        !if (nrank==0) then
+        !  print*, ">>> THERMAL CONDUCTIVITY <<<",f1, f2, f3, f4, f5, f6, f7, f8, f9
+        !end if
+ 
         ! -------- Artificial Conductivity --------
 
         ! Step 1: Get components of grad(e) squared individually
@@ -2198,6 +2512,7 @@ contains
 
         ! Filter kapstar
         call this%filter(kapstar, this%gfil, 2, this%x_bc, this%y_bc, this%z_bc)
+        this%kap  = this%kap  + kapstar
 
         ! -------- Artificial Diffusivity ---------
         if (present(dYsdx) .AND. present(dYsdy) .AND. present(dYsdz)) then
@@ -2249,10 +2564,6 @@ contains
             end if
         end if
 
-        ! Now, add to physical fluid properties
-        this%mu   = this%mu   + mustar
-        !this%bulk = this%bulk + bulkstar
-        this%kap  = this%kap  + kapstar
 
     end subroutine
 
@@ -2362,47 +2673,46 @@ contains
         real(rkind), dimension(this%nxp,this%nyp,this%nzp,9), target, intent(inout) :: duidxj
 
         real(rkind), dimension(:,:,:), pointer :: dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz
-        real(rkind), dimension(:,:,:), pointer :: lambda, bambda
+        real(rkind), dimension(:,:,:), pointer :: Skk
 
-        lambda => this%ybuf(:,:,:,1)
-        bambda => this%ybuf(:,:,:,2)
+        Skk => this%ybuf(:,:,:,1)
 
         dudx => duidxj(:,:,:,1); dudy => duidxj(:,:,:,2); dudz => duidxj(:,:,:,3);
         dvdx => duidxj(:,:,:,4); dvdy => duidxj(:,:,:,5); dvdz => duidxj(:,:,:,6);
         dwdx => duidxj(:,:,:,7); dwdy => duidxj(:,:,:,8); dwdz => duidxj(:,:,:,9);
        
-        ! Compute the multiplying factors (thermo-shit)
-        bambda = (four/three)*this%mu + this%bulk
-        lambda = this%bulk - (two/three)*this%mu
+        Skk = dudx + dvdy + dwdz
+        ! Store 2*Sij in duidxj matrix
+        dudx = 2*dudx;  dudy = dudy + dvdx;   dudz = dudz + dwdx
+        dvdx = dudy;    dvdy = 2*dvdy;        dvdz = dvdz + dwdy
+        dwdx = dudz;    dwdy = dvdz;          dwdz = 2*dwdz
+        ! Store tauij in duidxi matrix
+        !dudx = (this%mu+this%LAD_muij(:,:,:,1))*dudx + ((this%bulk+this%LAD_bulkij(:,:,:,1)) - &
+        !       ((two/three)*(this%mu+this%LAD_muij(:,:,:,1))))*Skk
+        !dudy = (this%mu+this%LAD_muij(:,:,:,2))*dudy + (this%LAD_bulkij(:,:,:,2)-((two/three)*this%LAD_muij(:,:,:,2)))*Skk
+        !dudz = (this%mu+this%LAD_muij(:,:,:,3))*dudz + (this%LAD_bulkij(:,:,:,3)-((two/three)*this%LAD_muij(:,:,:,3)))*Skk
+        !dvdx = (this%mu+this%LAD_muij(:,:,:,4))*dvdx + (this%LAD_bulkij(:,:,:,4)-((two/three)*this%LAD_muij(:,:,:,4)))*Skk
+        !dvdy = (this%mu+this%LAD_muij(:,:,:,5))*dvdy + ((this%bulk+this%LAD_bulkij(:,:,:,5)) - &
+        !       ((two/three)*(this%mu+this%LAD_muij(:,:,:,5))))*Skk
+        !dvdz = (this%mu+this%LAD_muij(:,:,:,6))*dvdz + (this%LAD_bulkij(:,:,:,6)-((two/three)*this%LAD_muij(:,:,:,6)))*Skk
+        !dwdx = (this%mu+this%LAD_muij(:,:,:,7))*dwdx + (this%LAD_bulkij(:,:,:,7)-((two/three)*this%LAD_muij(:,:,:,7)))*Skk
+        !dwdy = (this%mu+this%LAD_muij(:,:,:,8))*dwdy + (this%LAD_bulkij(:,:,:,8)-((two/three)*this%LAD_muij(:,:,:,8)))*Skk
+        !dwdz = (this%mu+this%LAD_muij(:,:,:,9))*dwdz + ((this%bulk+this%LAD_bulkij(:,:,:,9)) - &
+        !       ((two/three)*(this%mu+this%LAD_muij(:,:,:,9))))*Skk
 
-        ! Step 1: Get tau_12  (dudy is destroyed)
-        dudy =  dudy + dvdx
-        dudy = this%mu*dudy
-        !tauxyidz = 2
-    
-        ! Step 2: Get tau_13 (dudz is destroyed)
-        dudz = dudz + dwdx
-        dudz = this%mu*dudz
-        !tauxzidx = 3
-
-        ! Step 3: Get tau_23 (dvdz is destroyed)
-        dvdz = dvdz + dwdy
-        dvdz = this%mu*dvdz
-        !tauyzidx = 6
-
-        ! Step 4: Get tau_11 (dvdx is destroyed)
-        dvdx = bambda*dudx + lambda*(dvdy + dwdz)
-        !tauxxidx = 4
-
-        ! Step 5: Get tau_22 (dwdx is destroyed)
-        dwdx = bambda*dvdy + lambda*(dudx + dwdz)
-        !tauyyidx = 7
-
-        ! Step 6: Get tau_33 (dwdy is destroyed)
-        dwdy = bambda*dwdz + lambda*(dudx + dvdy)
-        !tauzzidx = 8
-
-        ! Done 
+        
+        dudx = (this%mu)*dudx + ((this%bulk+this%LAD_bulkij(:,:,:,1)) - &
+               ((two/three)*(this%mu)))*Skk
+        dudy = (this%mu)*dudy + (this%LAD_bulkij(:,:,:,2))*Skk
+        dudz = (this%mu)*dudz + (this%LAD_bulkij(:,:,:,3))*Skk
+        dvdx = (this%mu)*dvdx + (this%LAD_bulkij(:,:,:,4))*Skk
+        dvdy = (this%mu)*dvdy + ((this%bulk+this%LAD_bulkij(:,:,:,5)) - &
+               ((two/three)*(this%mu)))*Skk
+        dvdz = (this%mu)*dvdz + (this%LAD_bulkij(:,:,:,6))*Skk
+        dwdx = (this%mu)*dwdx + (this%LAD_bulkij(:,:,:,7))*Skk
+        dwdy = (this%mu)*dwdy + (this%LAD_bulkij(:,:,:,8))*Skk
+        dwdz = (this%mu)*dwdz + ((this%bulk+this%LAD_bulkij(:,:,:,9)) - &
+               ((two/three)*(this%mu)))*Skk
     end subroutine 
 
     subroutine get_q(this,duidxj,Jx,Jy,Jz)
@@ -2413,6 +2723,7 @@ contains
 
         integer :: i
         real(rkind), dimension(:,:,:), pointer :: tmp1_in_x, tmp2_in_x, tmp1_in_y, tmp1_in_z, tmp2_in_z
+        real(rkind), dimension(:,:,:), pointer :: tmp2_in_y, tmp3_in_y, tmp4_in_y
         type(derivatives), pointer :: der
 
         der => this%der
@@ -2424,22 +2735,41 @@ contains
         tmp2_in_z => this%zbuf(:,:,:,2)
 
         tmp1_in_y => this%ybuf(:,:,:,1)
+        tmp2_in_y => this%ybuf(:,:,:,2)
+        tmp3_in_y => this%ybuf(:,:,:,3)
+        tmp4_in_y => this%ybuf(:,:,:,4)
         
         ! Step 1: Get qy (dvdy is destroyed)
-        call der%ddy(this%T,tmp1_in_y,this%y_bc(1),this%y_bc(2))
-        duidxj(:,:,:,qyidx) = -this%kap*tmp1_in_y
+        call der%ddy(this%T,tmp2_in_y,this%y_bc(1),this%y_bc(2))
 
         ! Step 2: Get qx (dudx is destroyed)
         call transpose_y_to_x(this%T,tmp1_in_x,this%decomp)
         call der%ddx(tmp1_in_x,tmp2_in_x,this%x_bc(1),this%x_bc(2))
         call transpose_x_to_y(tmp2_in_x,tmp1_in_y,this%decomp)
-        duidxj(:,:,:,qxidx) = -this%kap*tmp1_in_y
 
         ! Step 3: Get qz (dwdz is destroyed)
         call transpose_y_to_z(this%T,tmp1_in_z,this%decomp)
         call der%ddz(tmp1_in_z,tmp2_in_z,this%z_bc(1),this%z_bc(2))
-        call transpose_z_to_y(tmp2_in_z,tmp1_in_y)
-        duidxj(:,:,:,qzidx) = -this%kap*tmp1_in_y
+        call transpose_z_to_y(tmp2_in_z,tmp3_in_y)
+       
+        ! Step 4: Add Directional LAD
+        !duidxj(:,:,:,qxidx) = (this%kap+this%LAD_kappaij(:,:,:,1))*tmp1_in_y + this%LAD_kappaij(:,:,:,2)*tmp2_in_y &
+        !                      + this%LAD_kappaij(:,:,:,3)*tmp3_in_y
+        !duidxj(:,:,:,qxidx) = - duidxj(:,:,:,qxidx)
+
+        !duidxj(:,:,:,qyidx) = this%LAD_kappaij(:,:,:,4)*tmp1_in_y + (this%kap+this%LAD_kappaij(:,:,:,5))*tmp2_in_y &
+        !                      + this%LAD_kappaij(:,:,:,6)*tmp3_in_y
+        !duidxj(:,:,:,qyidx) = - duidxj(:,:,:,qyidx)
+
+        !duidxj(:,:,:,qzidx) = this%LAD_kappaij(:,:,:,7)*tmp1_in_y + this%LAD_kappaij(:,:,:,8)*tmp2_in_y &
+        !                      + (this%kap+this%LAD_kappaij(:,:,:,9))*tmp3_in_y
+        !duidxj(:,:,:,qzidx) = - duidxj(:,:,:,qzidx)
+
+        duidxj(:,:,:,qxidx) = -this%kap*tmp1_in_y
+
+        duidxj(:,:,:,qyidx) = -this%kap*tmp2_in_y
+
+        duidxj(:,:,:,qzidx) = -this%kap*tmp3_in_y
 
         ! If multispecies, add the inter-species enthalpy flux
         if (this%mix%ns .GT. 1) then
@@ -2512,9 +2842,6 @@ contains
         !call this%viz%write_variable(this%e   , 'e'   )
         call this%viz%write_variable(this%mu  , 'mu'  )
         call this%viz%write_variable(this%bulk, 'bulk')
-        call this%viz%write_variable(this%LAD_bulkstar(:,:,:,1), 'bulkstar_xi')
-        call this%viz%write_variable(this%LAD_bulkstar(:,:,:,2), 'bulkstar_eta')
-        call this%viz%write_variable(this%LAD_bulkstar(:,:,:,3), 'bulkstar_zeta')
         call this%viz%write_variable(this%kap , 'kap' )
 
         if (this%mix%ns > 1) then

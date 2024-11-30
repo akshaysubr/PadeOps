@@ -152,8 +152,8 @@ subroutine meshgen(decomp, dxi, deta, dzeta, mesh, inputfile, meshcvl, dxs, dys,
             print *, "Domain size: ", Lx, Ly
         end if
 
-        dxi   = Lx/real(nx-1,rkind)   !periodic
-        deta  = Ly/real(ny-1,rkind)   !periodic
+        dxi   = Lx/real(nx-0,rkind)   !periodic
+        deta  = Ly/real(ny-0,rkind)   !periodic
         dzeta = dxi  !2D 
 
         x1 = -Lx/2._rkind; xn = Lx/2._rkind
@@ -177,20 +177,46 @@ subroutine meshgen(decomp, dxi, deta, dzeta, mesh, inputfile, meshcvl, dxs, dys,
           print*, '>>xfocus=',xfocus, '>>xtau=',xtau, '>>xstart=',xstart, '>>xh=',xh, '>>xflag=',xmetric_flag
           print*, '>>yfocus=',yfocus, '>>ytau=',ytau, '>>ystart=',ystart, '>>yh=',yh, '>>yflag=',ymetric_flag
        endif
+    
+        !!! ==== Uniform in x-y ==== !!!
+        x = xi
+        y = eta
+        z = zeta
+        !!!! ==== Stretching in x-y ==== !!!
         !z = zeta
         !call stretched_coordinates(decomp,x,xi,xmetric_flag,metric_params(1,1),&
         !                            metric_params(1,2),metric_params(1,3),metric_params(1,4))
         !call stretched_coordinates(decomp,y,eta,ymetric_flag,metric_params(2,1),&
         !                            metric_params(2,2),metric_params(2,3),metric_params(2,4))
-        do k=1,size(mesh,3)
-            do j=1,size(mesh,2)
-                do i=1,size(mesh,1)
-                    x(i,j,k)   = x1 + (real( ix1 -1 + i - 1, rkind ) + Ampx*sin(num*pi*real(iy1 -1 + j - 1, rkind)*deta/Ly + real(iy1 -1 + i, rkind)*phi/(decomp%xsz(1)-1)) )* dxi
-                    y(i,j,k)   = y1 + (real( iy1 -1 + j - 1, rkind ) + Ampy*sin(num*pi*real( ix1 -1 + i - 1, rkind )*dxi/Lx + real(iy1 -1 + j, rkind)*phi/(decomp%ysz(2)-1)) )* deta
-                    z(i,j,k)   = z1 + real( iz1 -1 + k - 1, rkind ) * dzeta
-                end do
-            end do
-        end do
+        !! ==== Wavy mesh in x-y ==== !!!
+        !do k=1,size(mesh,3)
+        !   do j=1,size(mesh,2)
+        !        do i=1,size(mesh,1)
+        !            x(i,j,k)   = x1 + (real( ix1 -1 + i - 1, rkind ) +
+        !            Ampx*sin(num*pi*real(iy1 -1 + j - 1, rkind)*deta/Ly +
+        !            real(iy1 -1 + i, rkind)*phi/(decomp%xsz(1)-1)) )* dxi
+        !            y(i,j,k)   = y1 + (real( iy1 -1 + j - 1, rkind ) +
+        !            Ampy*sin(num*pi*real( ix1 -1 + i - 1, rkind )*dxi/Lx +
+        !            real(iy1 -1 + j, rkind)*phi/(decomp%ysz(2)-1)) )* deta
+        !            z(i,j,k)   = z1 + real( iz1 -1 + k - 1, rkind ) * dzeta
+        !        end do
+        !    end do
+        !end do
+        !!! ==== Inclined mesh in x-y ==== !!!
+        !do k=1,size(mesh,3)
+        !    do j=1,size(mesh,2)
+        !        do i=1,size(mesh,1)
+        !            x(i,j,k)   = xi(i,j,k)
+        !            if (x(i,j,k) .le. four) then
+        !               y(i,j,k) = eta(i,j,k)
+        !            else
+        !               y(i,j,k) = tan(25.0_rkind * pi / 180.0_rkind) *
+        !               (x(i,j,k) - four) + eta(i,j,k)
+        !            end if
+        !            z(i,j,k)   = zeta(i,j,k)
+        !        end do
+        !    end do
+        !end do
 
     ! Grid width on stretched/uniform mesh
     call transpose_y_to_x(x,xtmp1,decomp)                   ! Decomposition in x

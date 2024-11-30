@@ -74,7 +74,7 @@ module cvlgrid_hooks
     end interface
 
     interface hook_timestep
-        subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,sgsmodel)
+        subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,LAD_mustar,LAD_bulkstar,LAD_kappastar,sgsmodel)
             import :: rkind
             import :: decomp_info
             import :: mixture
@@ -85,6 +85,7 @@ module cvlgrid_hooks
             real(rkind),                     intent(in) :: tsim
             real(rkind), dimension(:,:,:,:), intent(in) :: mesh
             real(rkind), dimension(:,:,:,:), intent(in) :: fields
+            real(rkind), dimension(:,:,:,:), intent(in) :: LAD_mustar,LAD_bulkstar,LAD_kappastar
             type(sgs_cgrid), optional,       intent(in) :: sgsmodel
 
         end subroutine

@@ -51,7 +51,8 @@ contains
     sum_pert = sum_pert/(size(u_pert,1)+size(u_pert,2))
     TI_current = sqrt(sum_pert/3)/U_scale
     
-    !print*, ">>>>> Current TI =", TI_current
+    print*, ">>>>> Current TI =", TI_current
+    print*, ">>>>> Required TI =", TI_reqd
     TI_scale = TI_reqd/TI_current
 
     u_pert = TI_scale*u_pert
@@ -174,7 +175,7 @@ contains
     call get_corr_field(w_noise_2d, coeff_bx, coeff_by, coeff_bz, rand_z, ny_in, nz_in)
  
     ! Scale the correlated random velocity field to get correct TI
-    TI_reqd = 0.05_rkind*U_avg; U_scale = 0.707_rkind
+    TI_reqd = 0.1_rkind*U_avg; U_scale = 0.707_rkind
     call scale_uvw_TI(u_noise_2d, v_noise_2d, w_noise_2d, TI_reqd, U_scale)
 
     idx_2d_to_1d = 0
@@ -297,7 +298,7 @@ contains
 
     dz = Lz/real(decomp%zsz(3)-1,rkind)
     filpt = 0.03_rkind/dz 
-    thickT = real(1.0D0, rkind)
+    thickT = real(0.7D0, rkind)
         
     ! Gussian Filter for start
     do i=1,decomp%ysz(3)
@@ -379,7 +380,7 @@ contains
 
     dy = Ly/real(decomp%ysz(2)-1,rkind)
     filpt = 0.03_rkind/dy 
-    thickT = real(1.0D0, rkind)
+    thickT = real(0.7D0, rkind)
         
     ! Gussian Filter for bottom
     do i=1,decomp%ysz(2)
@@ -462,8 +463,8 @@ contains
     character(len=clen) :: outputfile
 
     dx = Lx/real(decomp%xsz(1)-1,rkind)
-    filpt = 0.06_rkind/dx 
-    thickT = real(2.0D0, rkind)
+    filpt = 0.03_rkind/dx 
+    thickT = real(0.7D0, rkind)
 
     ! Gaussian Filter for right side of domain 
     do i=1,decomp%ysz(1)
@@ -513,115 +514,52 @@ contains
     real(rkind) :: b1, b2, b3, b4, b5, b6, b7, b8
     real(rkind) :: c1, c2, c3, c4, c5, c6, c7, c8
     
-
-   if (tsim .le. 0.00138_rkind ) then
-    !!!! Pressure   !!!! PR = 03; DRL = 165mm
-        a1 =   97320000.0_rkind; b1 =  -0.0002813_rkind;  c1 =   0.0001025_rkind
-        a2 =   109700.0_rkind;   b2 =   0.00003148_rkind; c2 =   0.0002566_rkind
-        a3 =   87450.0_rkind;    b3 =   0.0007718_rkind;  c3 =   0.0005342_rkind
-        a4 =   22370.0_rkind;    b4 =   0.0004977_rkind;  c4 =   0.0001356_rkind
-        a5 =   4179.0_rkind;     b5 =   0.0007091_rkind;  c5 =   0.00009197_rkind
-        a6 =   22190.0_rkind;    b6 =   0.0003435_rkind;  c6 =   0.00008325_rkind
-        a7 =   81480.0_rkind;    b7 =   0.001516_rkind;   c7 =   0.0004892_rkind
+    !!!! Pressure   !!!! PR = 10; DRL = 285mm
+        a1 = 44490000000.0_rkind; b1 = -0.0008155_rkind; c1 = 0.0002232_rkind
+        a2 = -558900000.0_rkind; b2 = -0.004976_rkind; c2 = 0.001471_rkind
+        a3 = -305.3_rkind; b3 = 0.0007746_rkind; c3 = 0.0002078_rkind
+        a4 = 0.0_rkind; b4 = 90.97_rkind; c4 = 3.778_rkind
+        a5 = 13380.0_rkind; b5 = 0.001125_rkind; c5 = 0.0002818_rkind
+        a6 = 1159000.0_rkind; b6 = -0.01132_rkind; c6 = 0.008885_rkind
+        a7 = 29420.0_rkind; b7 = 0.001261_rkind; c7 = 0.0005118_rkind
+        a8 = 10340.0_rkind; b8 = 0.0006946_rkind; c8 = 0.0002622_rkind
 
         P0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
              a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
              a5*exp(-((tsim-b5)/c5)**two) + a6*exp(-((tsim-b6)/c6)**two) + &
-             a7*exp(-((tsim-b7)/c7)**two)
+             a7*exp(-((tsim-b7)/c7)**two) + a8*exp(-((tsim-b8)/c8)**two)
 
     !!!! Density
-        a1 = 5055.0_rkind;  b1 = -0.0003915_rkind; c1 = 0.0001282_rkind
-        a2 = 0.9431_rkind;  b2 = 0.00003233_rkind; c2 = 0.0002381_rkind
-        a3 = 1.144_rkind;   b3 = 0.0007858_rkind;  c3 = 0.0007648_rkind
-        a4 = 0.1478_rkind;  b4 = 0.0004976_rkind;  c4 = 0.0001295_rkind
-        a5 = 0.02531_rkind; b5 = 0.0007127_rkind;  c5 = 0.00007627_rkind
-        a6 = 0.1846_rkind;  b6 = 0.0003433_rkind;  c6 = 0.00008253_rkind
-        a7 = 0.7336_rkind;  b7 = 0.001618_rkind;   c7 = 0.0004885_rkind
+        a1 = 0.4468_rkind; b1 = -0.000006526_rkind; c1 = 0.00003638_rkind
+        a2 = 0.5105_rkind; b2 = -0.00002627_rkind; c2 = 0.0003507_rkind
+        a3 = -0.01201_rkind; b3 = 0.0006779_rkind; c3 = 0.0002943_rkind
+        a4 = -0.407_rkind; b4 = 0.000006928_rkind; c4 = 0.0004122_rkind
+        a5 = 0.01644_rkind; b5 = 0.001145_rkind; c5 = 0.00007661_rkind
+        a6 = 0.09989_rkind; b6 = 0.001225_rkind; c6 = 0.0003107_rkind
+        a7 = 2.025_rkind; b7 = 0.0003482_rkind; c7 = 0.002634_rkind
+        a8 = -0.01438_rkind; b8 = 0.00107_rkind; c8 = 0.000005939_rkind
 
         rho0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
              a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
              a5*exp(-((tsim-b5)/c5)**two) + a6*exp(-((tsim-b6)/c6)**two) + &
-             a7*exp(-((tsim-b7)/c7)**two)
+             a7*exp(-((tsim-b7)/c7)**two) + a8*exp(-((tsim-b8)/c8)**two)
 
     !!!! Velocity
-        a1 = -117.7_rkind;  b1 = 0.00007236_rkind;  c1 = 0.0001633_rkind
-        a2 = -6.428_rkind;  b2 = 0.0002879_rkind;   c2 = 0.00002214_rkind
-        a3 = -9.864_rkind;  b3 = 0.0003476_rkind;   c3 = 0.00005368_rkind
-        a4 = -270000_rkind; b4 = -0.0009989_rkind;  c4 = 0.0003654_rkind
-        a5 = zero;          b5 = -0.002467_rkind;   c5 = 0.00004653_rkind
-        a6 = 2.411_rkind;   b6 = 0.0006228_rkind;   c6 = 0.00005292_rkind
-        a7 = 653.9_rkind;   b7 = -0.001468_rkind;   c7 = 0.002015_rkind
+        a1 = 15.65_rkind; b1 = 0.00005021_rkind; c1 = 0.00003215_rkind
+        a2 = 48.56_rkind; b2 = 0.00008984_rkind; c2 = 0.0001008_rkind
+        a3 = 76.03_rkind; b3 = 0.0005396_rkind; c3 = 0.0003589_rkind
+        a4 = 32.42_rkind; b4 = 0.001104_rkind; c4 = 0.0002207_rkind
+        a5 = 0_rkind; b5 = 0.001513_rkind; c5 = 0.00000101_rkind
+        a6 = 10.39_rkind; b6 = 0.0008585_rkind; c6 = 0.0001343_rkind
+        a7 = 352.3_rkind; b7 = 0.001485_rkind; c7 = 0.002329_rkind
+        a8 = 63.68_rkind; b8 = 0.0002284_rkind; c8 = 0.0001976_rkind
 
         U0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
              a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
              a5*exp(-((tsim-b5)/c5)**two) + a6*exp(-((tsim-b6)/c6)**two) + &
-             a7*exp(-((tsim-b7)/c7)**two)
-    else if (tsim .gt. 0.00138_rkind .and. tsim .le. 0.0033828_rkind) then
-    !!!! Pressure   !!!! PR = 10; DRL = 285mm
-        a1 = 78580.0_rkind; b1 = 0.0033_rkind; c1 = 0.0009583_rkind
-        a2 = 92070.0_rkind; b2 = 0.001702_rkind; c2 = 0.001258_rkind
-        a3 = 27580.0_rkind; b3 = 0.0008947_rkind; c3 = 0.0005325_rkind
-        a4 = 9775.0_rkind; b4 = 0.003481_rkind; c4 = 0.0001721_rkind
-        a5 = 924.0_rkind; b5 = 0.002466_rkind; c5 = 0.000164_rkind
+             a7*exp(-((tsim-b7)/c7)**two) + a8*exp(-((tsim-b8)/c8)**two)
 
-        P0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-!!!! Density
-        a1 = 1.066_rkind; b1 = 0.003275_rkind; c1 = 0.001093_rkind
-        a2 = 1.019_rkind; b2 = 0.001652_rkind; c2 = 0.001111_rkind
-        a3 = 0.4825_rkind; b3 = 0.0007822_rkind; c3 = 0.0006249_rkind
-        a4 = 0.09465_rkind; b4 = 0.003488_rkind; c4 = 0.0001782_rkind
-        a5 = 0.00903_rkind; b5 = 0.002468_rkind; c5 = 0.0001766_rkind
-
-        rho0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-
-        !!!! Velocity
-        a1 = -19.99_rkind; b1 = 0.002963_rkind; c1 = 0.0006406_rkind
-        a2 = 2.35_rkind; b2 = 0.001719_rkind; c2 = 0.0002337_rkind
-        a3 = 133.0_rkind; b3 = 0.0008287_rkind; c3 = 0.0008501_rkind
-        a4 = 0.0_rkind; b4 = 0.01234_rkind; c4 = 0.0006641_rkind
-        a5 = -6.723_rkind; b5 = 0.002301_rkind; c5 = 0.0002398_rkind
-
-        U0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-else if (tsim .gt. 0.0033828_rkind .and. tsim .le. 0.0050828_rkind ) then
-        !!!! Pressure   !!!! PR = 10; DRL = 285mm
-        a1 = 78460.0_rkind; b1 = 0.004608_rkind; c1 = 0.0007341_rkind
-        a2 = 95270.0_rkind; b2 = 0.003383_rkind; c2 = 0.0009368_rkind
-        a3 = 66360.0_rkind; b3 = 0.005373_rkind; c3 = 0.0004261_rkind
-        a4 = 8981.0_rkind; b4 = 0.004871_rkind; c4 = 0.0002552_rkind
-        a5 = -1203.0_rkind; b5 = 0.003868_rkind; c5 = 0.0001478_rkind
-
-        P0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-
-        !!!! Density
-        a1 = 1.23_rkind; b1 = 0.004301_rkind; c1 = 0.002246_rkind
-        a2 = 0.3355_rkind; b2 = 0.00336_rkind; c2 = 0.0003216_rkind
-        a3 = 0.2435_rkind; b3 = 0.005468_rkind; c3 = 0.0004594_rkind
-        a4 = 0.02893_rkind; b4 = 0.004866_rkind; c4 = 0.0002126_rkind
-        a5 = -0.1634_rkind; b5 = 0.003405_rkind; c5 = 0.0002323_rkind
-
-        rho0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-
-        !!!! Velocity
-        a1 = -9.215_rkind; b1 = 0.004314_rkind; c1 = 0.000329_rkind
-        a2 = -18.74_rkind; b2 = 0.003636_rkind; c2 = 0.000485_rkind
-        a3 = -30.64_rkind; b3 = 0.005678_rkind; c3 = 0.0003735_rkind
-        a4 = -4.112_rkind; b4 = 0.004914_rkind; c4 = 0.0001964_rkind
-        a5 = 0.4059_rkind; b5 = 0.003794_rkind; c5 = 0.000003343_rkind
-        U0 = a1*exp(-((tsim-b1)/c1)**two) + a2*exp(-((tsim-b2)/c2)**two) +  &
-             a3*exp(-((tsim-b3)/c3)**two) + a4*exp(-((tsim-b4)/c4)**two) + &
-             a5*exp(-((tsim-b5)/c5)**two)
-    end if    
- end subroutine
+    end subroutine
 
     subroutine stretched_coordinates(decomp, y, eta, ymetric_flag, param1, param2, param3, param4)
     use constants,        only: zero, half, one
@@ -711,7 +649,8 @@ subroutine meshgen(decomp, dxi, deta, dzeta, mesh, inputfile, meshcvl, dxs, dys,
     real(rkind), dimension(:,:,:  ), intent(inout) :: dxs, dys, dzs
     real(rkind), dimension(:,:,:,:), target,intent(in):: xbuf, zbuf
     real(rkind), dimension(:,:,:), pointer :: xtmp1, xtmp2, ztmp1, ztmp2
-    integer :: i,j,k,ioUnit, nx, ny, nz, ix1, ixn, iy1, iyn, iz1, izn
+    integer :: i,j,k,ioUnit, nx, ny, nz, ix1, ixn, iy1, iyn, iz1, izn, nx1, nx2, ny1, ny2, ny3, nz1, nz2, nz3, idx
+    real(rkind) :: dx1, dx2, dy1, dy2, dy3, dz1, dz2, dz3, ax, ay, az, Lx1, Lx2, Ly1, Ly2, Ly3, Lz1, Lz2, Lz3
     real(rkind) :: xfocus, xtau, xh, xstart
     real(rkind) :: yfocus, ytau, yh, ystart
     real(rkind) :: zfocus, ztau, zh, zstart
@@ -773,25 +712,93 @@ subroutine meshgen(decomp, dxi, deta, dzeta, mesh, inputfile, meshcvl, dxs, dys,
                 end do
             end do
         end do
-
-    xfocus = metric_params(1,1);  xtau   = metric_params(1,2);  xstart = metric_params(1,3); xh = metric_params(1,4)
-    yfocus = metric_params(2,1);  ytau   = metric_params(2,2);  ystart = metric_params(2,3); yh = metric_params(2,4)
-    zfocus = metric_params(3,1);  ztau   = metric_params(3,2);  zstart = metric_params(3,3); zh = metric_params(3,4)
-
-    if(nrank == 0) then
-      print*, '>>xfocus=',xfocus, '>>xtau=',xtau, '>>xstart=',xstart, '>>xh=',xh, '>>xflag=',xmetric_flag
-      print*, '>>yfocus=',yfocus, '>>ytau=',ytau, '>>ystart=',ystart, '>>yh=',yh, '>>yflag=',ymetric_flag
-      print*, '>>zfocus=',zfocus, '>>ztau=',ztau, '>>zstart=',zstart, '>>zh=',zh, '>>zflag=',zmetric_flag
-    endif
-   
-    call stretched_coordinates(decomp,x,xi,xmetric_flag,metric_params(1,1),&
-                               metric_params(1,2),metric_params(1,3),metric_params(1,4))
-
-    call stretched_coordinates(decomp,y,eta,ymetric_flag,metric_params(2,1),&
-                               metric_params(2,2),metric_params(2,3),metric_params(2,4))
+    !!! Non-uniform grid in x-direction
+    nx1 = nx*4/5; nx2 = nx-nx1
+    if (nrank == 0) then
+        print*, 'nx1=', nx1, 'nx2=', nx2
+    end if
+    ax = 0.4_rkind;  Lx1 = abs(ax+x1); Lx2 = abs(ax-xn)
+    call transpose_y_to_x(x,xtmp1,decomp)     ! Decomposition in x
+    dx1 = Lx1/(nx1-1)
+    idx = 1
+    do i = 1,nx1
+       xtmp1(idx,:,:) = x1 + ((i-1) * dx1)
+       idx = idx + 1
+    end do
+    dx2 = abs(xtmp1(idx-1,1,1)-xn)/nx2
+    do i = 1,nx2
+       xtmp1(idx,:,:) = xtmp1(idx-1,:,:) + dx2
+       idx = idx + 1
+    end do
+    call transpose_x_to_y(xtmp1,x,decomp)     ! Decomposition in x
     
-    call stretched_coordinates(decomp,z,zeta,zmetric_flag,metric_params(3,1),&
-                               metric_params(3,2),metric_params(3,3),metric_params(3,4))
+    !!! Non-uniform grid in y-direction
+    ny1 = ny/8; ny2 = ny*6/8; ny3 = ny-ny1-ny2
+    if (nrank == 0) then
+       print*, 'ny1=', ny1, 'ny2=', ny2, 'ny3=', ny3
+    end if
+    ay = 0.2_rkind; Ly1 = abs(ay+y1); Ly2 = 2*ay; Ly3 = yn-ay
+    dy1 = Ly1/(ny1-1)
+    dy2 = Ly2/(ny2-1)
+    idx = 1
+    do j = 1,ny1
+       y(:,idx,:) = y1 + ((j-1) * dy1)
+       idx = idx + 1
+    end do
+    do j = 1,ny2
+       y(:,idx,:) = y(:,idx-1,:) + dy2
+       idx = idx + 1
+    end do
+    dy3 = (abs(y(1,idx-1,1)-yn))/ny3
+    do j = 1,ny3
+       y(:,idx,:) = y(:,idx-1,:) + dy3
+       idx = idx + 1
+    end do   
+    
+   
+    !!! Non-uniform grid in z-direction
+    call transpose_y_to_z(z,ztmp1,decomp)   ! Decomposition in z
+    nz1 = nz/8; nz2 = nz*6/8; nz3 = nz-nz1-nz2
+    if (nrank == 0) then
+       print*, 'nz1=', nz1, 'nz2=', nz2, 'nz3=', nz3
+    end if
+    az = 0.2_rkind; Lz1 = abs(az+z1); Lz2 = 2*az; Lz3 = zn-az
+    dz1 = Lz1/(nz1-1)
+    dz2 = Lz2/(nz2-1)
+    idx = 1
+    do k = 1,nz1
+       ztmp1(:,:,idx) = z1 + ((k-1) * dz1)
+       idx = idx + 1
+    end do
+    do k = 1,nz2
+       ztmp1(:,:,idx) = ztmp1(:,:,idx-1) + dz2
+       idx = idx + 1
+    end do
+    dz3 = (abs(ztmp1(1,1,idx-1)-zn))/nz3
+    do k = 1,nz3
+       ztmp1(:,:,idx) = ztmp1(:,:,idx-1) + dz3
+       idx = idx + 1
+    end do   
+    call transpose_z_to_y(ztmp1,z,decomp)   ! Decomposition in z
+
+    !xfocus = metric_params(1,1);  xtau   = metric_params(1,2);  xstart = metric_params(1,3); xh = metric_params(1,4)
+    !yfocus = metric_params(2,1);  ytau   = metric_params(2,2);  ystart = metric_params(2,3); yh = metric_params(2,4)
+    !zfocus = metric_params(3,1);  ztau   = metric_params(3,2);  zstart = metric_params(3,3); zh = metric_params(3,4)
+
+    !if(nrank == 0) then
+    !  print*, '>>xfocus=',xfocus, '>>xtau=',xtau, '>>xstart=',xstart, '>>xh=',xh, '>>xflag=',xmetric_flag
+    !  print*, '>>yfocus=',yfocus, '>>ytau=',ytau, '>>ystart=',ystart, '>>yh=',yh, '>>yflag=',ymetric_flag
+    !  print*, '>>zfocus=',zfocus, '>>ztau=',ztau, '>>zstart=',zstart, '>>zh=',zh, '>>zflag=',zmetric_flag
+    !endif
+   
+    !call stretched_coordinates(decomp,x,xi,xmetric_flag,metric_params(1,1),&
+    !                           metric_params(1,2),metric_params(1,3),metric_params(1,4))
+
+    !call stretched_coordinates(decomp,y,eta,ymetric_flag,metric_params(2,1),&
+    !                           metric_params(2,2),metric_params(2,3),metric_params(2,4))
+    !
+    !call stretched_coordinates(decomp,z,zeta,zmetric_flag,metric_params(3,1),&
+    !                           metric_params(3,2),metric_params(3,3),metric_params(3,4))
 
     ! Grid width on stretched/uniform mesh
     call transpose_y_to_x(x,xtmp1,decomp)   ! Decomposition in x
@@ -816,7 +823,7 @@ subroutine meshgen(decomp, dxi, deta, dzeta, mesh, inputfile, meshcvl, dxs, dys,
     ztmp2(:,:,nz) =  ztmp1(:,:,nz) - ztmp1(:,:,nz-1)
     call transpose_z_to_y(ztmp2,dzs,decomp)   ! Decomposition in x
 
-    !! Write grid width to a file
+    !!! Write grid width to a file
     !write(outputfile, '(a,i0,a)') 'grid_x_', nrank, '.dat'
     !open(11,file=outputfile,status='unknown')
     !do i=1,decomp%ysz(1)
@@ -1034,9 +1041,9 @@ subroutine hook_bc(decomp,mesh,fields,mix,tsim,x_bc,y_bc,z_bc,newTimeStep, time_
             do k = 1, decomp%ysz(3) 
                do j = 1, decomp%ysz(2)
                    rad = sqrt(y(1,j,1)**2 + z(1,1,k)**2)
-                   u(1,j,k)   =  umin + (one - tanh(1100.0_rkind*(rad-half*Dia))) * diff_u
-                   p(1,j,k)   =  pmin + (one - tanh(1100.0_rkind*(rad-half*Dia))) * diff_p
-                   rho(1,j,k) =  rhomin + (one - tanh(1100.0_rkind*(rad-half*Dia))) * diff_rho
+                   u(1,j,k)   =  umin + (one - tanh(600.0_rkind*(rad-half*Dia))) * diff_u
+                   p(1,j,k)   =  pmin + (one - tanh(600.0_rkind*(rad-half*Dia))) * diff_p
+                   rho(1,j,k) =  rhomin + (one - tanh(600.0_rkind*(rad-half*Dia))) * diff_rho
                    T(1,j,k)   =  p(1,j,k) / (Rgas*rho(1,j,k))
                enddo
             enddo
@@ -1048,12 +1055,13 @@ subroutine hook_bc(decomp,mesh,fields,mix,tsim,x_bc,y_bc,z_bc,newTimeStep, time_
         ! Global size
         nx  = decomp%xsz(1);    ny  = decomp%ysz(2) ;  nz  = decomp%zsz(3)
         ! Transpose u,v,w to x decomposition and add noise
-        if (newTimeStep) then
+        !if (newTimeStep) then
           if (add_noise) then
             allocate(u_xtmp(decomp%xsz(1),decomp%xsz(2),decomp%xsz(3)))
             allocate(v_xtmp(decomp%xsz(1),decomp%xsz(2),decomp%xsz(3)))
             allocate(w_xtmp(decomp%xsz(1),decomp%xsz(2),decomp%xsz(3)))
             allocate(u_noise(ny, nz));      allocate(v_noise(ny, nz));         allocate(w_noise(ny, nz))
+            u_noise = zero; v_noise = zero; w_noise = zero
             call transpose_y_to_x(u,u_xtmp,decomp)  
             call transpose_y_to_x(v,v_xtmp,decomp)  
             call transpose_y_to_x(w,w_xtmp,decomp)  
@@ -1079,7 +1087,7 @@ subroutine hook_bc(decomp,mesh,fields,mix,tsim,x_bc,y_bc,z_bc,newTimeStep, time_
             deallocate(u_noise, v_noise, w_noise)
             deallocate(u_xtmp, v_xtmp, w_xtmp)
           end if
-        end if
+        !end if
 
         !!!!! =============  Add Sponge+bulk for exit bc ==========!!!!!
         ! Gradually apply the exit boundary conditions
@@ -1095,7 +1103,7 @@ subroutine hook_bc(decomp,mesh,fields,mix,tsim,x_bc,y_bc,z_bc,newTimeStep, time_
 end subroutine
 
 
-subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,sgsmodel)
+subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,LAD_mustar,LAD_bulkstar,LAD_kappastar,sgsmodel)
     use kind_parameters,  only: rkind,clen
     use constants,        only: zero,half,two
     use CurvilCompressibleGrid, only: rho_index,u_index,v_index,w_index,p_index,T_index,e_index,mu_index,bulk_index,kap_index,Ys_index
@@ -1114,9 +1122,12 @@ subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,sgsmodel)
     real(rkind),                     intent(in) :: tsim
     real(rkind), dimension(:,:,:,:), intent(in) :: mesh
     real(rkind), dimension(:,:,:,:), intent(in) :: fields
+    real(rkind), dimension(:,:,:,:), intent(in) :: LAD_mustar,LAD_bulkstar,LAD_kappastar
     type(sgs_cgrid), optional,       intent(in) :: sgsmodel
 
-    real(rkind) :: dx, Ythick, oob
+    real(rkind) :: max_mustar_xi,   max_bulkstar_xi,   max_kappastar_xi
+    real(rkind) :: max_mustar_eta,  max_bulkstar_eta,  max_kappastar_eta
+    real(rkind) :: max_mustar_zeta, max_bulkstar_zeta, max_kappastar_zeta
     integer :: ny  , j
     integer :: iounit = 229
     character(len=clen) :: outputfile
@@ -1130,6 +1141,19 @@ subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,sgsmodel)
                  Ys   => fields(:,:,:,Ys_index:Ys_index+mix%ns-1),                 &
                  diff => fields(:,:,:,Ys_index+mix%ns:Ys_index+2*mix%ns-1),        &
                  x => mesh(:,:,:,1), y => mesh(:,:,:,2), z => mesh(:,:,:,3) )
+       
+        max_mustar_xi   = P_MAXVAL(LAD_mustar(:,:,:,1))
+        max_mustar_eta  = P_MAXVAL(LAD_mustar(:,:,:,2))
+        max_mustar_zeta = P_MAXVAL(LAD_mustar(:,:,:,3))
+        
+        max_bulkstar_xi   = P_MAXVAL(LAD_bulkstar(:,:,:,1))
+        max_bulkstar_eta  = P_MAXVAL(LAD_bulkstar(:,:,:,2))
+        max_bulkstar_zeta = P_MAXVAL(LAD_bulkstar(:,:,:,3))
+        
+        max_kappastar_xi   = P_MAXVAL(LAD_kappastar(:,:,:,1))
+        max_kappastar_eta  = P_MAXVAL(LAD_kappastar(:,:,:,2))
+        max_kappastar_zeta = P_MAXVAL(LAD_kappastar(:,:,:,3))
+
         call message(2,"Maximum u-velocity",P_MAXVAL(u))
         call message(2,"Maximum v-velocity",P_MAXVAL(v))
         call message(2,"Maximum pressure",P_MAXVAL(p))
@@ -1138,7 +1162,10 @@ subroutine hook_timestep(decomp,mesh,fields,mix,step,tsim,sgsmodel)
         call message(2,"Maximum shear viscosity",P_MAXVAL(mu))
         call message(2,"Maximum bulk viscosity",P_MAXVAL(bulk))
         call message(2,"Maximum conductivity",P_MAXVAL(kap))
-        call message(2,"Maximum diffusivity",P_MAXVAL(diff))
+        call message(2,"Maximum LAD shear viscosity",max(max_mustar_xi,max_mustar_eta,max_mustar_zeta))
+        call message(2,"Maximum LAD bulk  viscosity",max(max_bulkstar_xi,max_bulkstar_eta,max_bulkstar_zeta))
+        call message(2,"Maximum LAD conductivity",max(max_kappastar_xi,max_kappastar_eta,max_kappastar_zeta))
+        call message(2,"Maximum LAD diffusivity",P_MAXVAL(diff))
 
 
     end associate

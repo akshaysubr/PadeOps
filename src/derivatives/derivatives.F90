@@ -262,8 +262,12 @@ contains
         real(rkind), target,intent(in), optional, dimension(:,:,:,:) :: xbuf, zbuf
         real(rkind), dimension(:,:,:), pointer :: xtmp1, xtmp2, ztmp1, ztmp2
 
-        xtmp1 => xbuf(:,:,:,1); xtmp2 => xbuf(:,:,:,2) 
-        ztmp1 => zbuf(:,:,:,1); ztmp2 => zbuf(:,:,:,2) 
+        if (present(xbuf) .and. present(zbuf)) then
+            xtmp1 => xbuf(:,:,:,1)
+            xtmp2 => xbuf(:,:,:,2)
+            ztmp1 => zbuf(:,:,:,1)
+            ztmp2 => zbuf(:,:,:,2)
+        end if
        
         if (this%initialized) then
             call message("WARNING: Reinitializing the DERIVATIVE class!")
@@ -301,10 +305,12 @@ contains
                               xtmp1, y, ztmp1, this%curvilinear, inputfile, xtmp2, eta, ztmp2)
         endif
 
-        nullify(xtmp1)
-        nullify(ztmp1)
-        nullify(xtmp2)
-        nullify(ztmp2)
+        if (present(xbuf) .and. present(zbuf)) then
+           nullify(xtmp1)
+           nullify(ztmp1)
+           nullify(xtmp2)
+           nullify(ztmp2)
+        end if
 
     end subroutine
 
