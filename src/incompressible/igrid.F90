@@ -79,7 +79,7 @@ module IncompressibleGrid
 
         ! Variables common to grid
         integer :: nx, ny, nz, t_datadump, t_restartdump
-        real(rkind) :: dt, tstop, CFL, CviscDT, dx, dy, dz, tsim
+        real(rkind) :: dt, maxDt, tstop, CFL, CviscDT, dx, dy, dz, tsim
         integer :: nstepConstDt ! Number of steps using constant dt before switching to CFL condition
         character(len=clen) ::  outputdir
         real(rkind), dimension(:,:,:,:), allocatable :: mesh, meshE
@@ -451,7 +451,7 @@ contains
         integer :: t_pointProbe = 10000, t_start_pointProbe = 10000, t_stop_pointProbe = 1
         integer :: runID = 0,  t_dataDump = 99999, t_restartDump = 99999,t_stop_planeDump = 1,t_dumpKSprep = 10 
         integer :: restartFile_TID = 1, ioType = 0, restartFile_RID =1, t_start_planeDump = 1
-        real(rkind) :: dt=-one,tstop=one,CFL =-one,tSimStartStats=100.d0,dpfdy=zero,dPfdz=zero,CviscDT=1.d0,deltaT_dump=1.d0
+        real(rkind) :: dt=-one,maxDt=1.d14,tstop=one,CFL =-one,tSimStartStats=100.d0,dpfdy=zero,dPfdz=zero,CviscDT=1.d0,deltaT_dump=1.d0
         integer :: nstepConstDt = 0 
         real(rkind) :: Pr = 0.7_rkind, Re = 8000._rkind, Ro = 1000._rkind,dpFdx = zero, G_alpha = 0.d0, PrandtlFluid = 1.d0, moistureFactor = 0.61_rkind
         real(rkind) :: SpongeTscale = 50._rkind, zstSponge = 0.8_rkind, Fr = 1000.d0, G_geostrophic = 1.d0
@@ -510,7 +510,7 @@ contains
         ! For MPI communication for probes
         integer, dimension(:), allocatable :: displs, probe_counts, send_buff, recv_buff
 
-        namelist /INPUT/ nx, ny, nz, tstop, dt, CFL, nsteps, inputdir, outputdir, prow, pcol, &
+        namelist /INPUT/ nx, ny, nz, tstop, dt, maxDt, CFL, nsteps, inputdir, outputdir, prow, pcol, &
                         useRestartFile, restartFromViz, restartFile_TID, restartFile_RID, CviscDT, nstepConstDt, &
                         restartFromDifferentGrid, nxS, nyS, nzS
         namelist /IO/ vizDump_Schedule, deltaT_dump, t_restartDump, t_dataDump, ioType, dumpPlanes, runID, useProbes, &
@@ -565,6 +565,7 @@ contains
         close(ioUnit)
         this%nx = nx; this%ny = ny; this%nz = nz; this%meanfact = one/(real(nx,rkind)*real(ny,rkind)); 
         this%dt = dt; this%dtby2 = dt/two ; this%Re = Re; this%useSponge = useSpongeLayer
+        this%maxDt = maxDt
         this%nstepConstDt = nstepConstDt 
         this%outputdir = outputdir; this%inputdir = inputdir; this%isStratified = isStratified
         this%WallMtype = WallMType; this%runID = runID; this%tstop = tstop; this%t_dataDump = t_dataDump

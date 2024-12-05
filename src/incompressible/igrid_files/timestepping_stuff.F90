@@ -786,6 +786,10 @@
            end if 
 
            this%dt = minval(dtmin)
+
+           ! User-specified maximum dt sets upper bound on dynamic dt calculation
+           this%dt = min(this%dt,this%maxDt)
+           
            idx = minloc(dtmin, DIM=1)
            select case(idx)
            case (1) 
