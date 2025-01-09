@@ -8,7 +8,7 @@ module MultiphaseAdvection_data
     real(rkind) :: p_infty = one, Rgas = one, gamma = 1.4_rkind, mu = 10._rkind, rho_0 = one, p_amb = 0.1_rkind
     real(rkind) :: p_infty_2 = one, Rgas_2 = one, gamma_2 = 1.4_rkind, mu_2 = 10._rkind, rho_0_2 = one, eta_det_ge = one,eta_det_ge_2 = one, eta_det_gp = one,eta_det_gp_2 = one, eta_det_gt = one,eta_det_gt_2 = one,diff_c_ge = one,diff_c_ge_2 = one, diff_c_gp = one,diff_c_gp_2 = one, diff_c_gt = one,diff_c_gt_2 = one,v0
     real(rkind) :: minVF = 0.2_rkind, thick = one
-    real(rkind) :: rhoRatio = one, pRatio = two
+    real(rkind) :: rhoRatio = 1.0, pRatio = 2.0
     logical     :: sharp = .FALSE.
     real(rkind) :: p1,p2,rho1,rho2,u1,u2,g11_1,g11_2,grho1,grho2,a1,a2
     real(rkind) :: rho1_2,rho2_2,u1_2,u2_2,g11_1_2,g11_2_2,grho1_2,grho2_2,a1_2,a2_2
@@ -205,7 +205,7 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
 
     logical :: periodicx,periodicy,periodicz
     integer :: ioUnit
-    real(rkind), dimension(decomp%ysz(1),decomp%ysz(2),decomp%ysz(3)) :: tmp, dum, noise, tmpeta,eta
+    real(rkind), dimension(decomp%ysz(1),decomp%ysz(2),decomp%ysz(3)) :: tmp, dum, noise, tmpeta,eta,noise2
     real(rkind), dimension(8) :: fparams
     real(rkind) :: fac, Lr, STRETCH_RATIO = 1.5
     integer, dimension(2) :: iparams
@@ -213,8 +213,6 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
     logical :: adjustPamb = .FALSE.   ! If true, p_amb is adjusted to ensure p-T equilibrium
 
     integer :: nx,ny,nz
-    nx = size(mesh,1); ny = size(mesh,2); nz = size(mesh,3)
-    CALL RANDOM_NUMBER(noise)
 
     namelist /PROBINPUT/  p_infty, Rgas, gamma, mu, rho_0, p_amb, thick, minVF, rhoRatio, pRatio, &
                           p_infty_2, Rgas_2, gamma_2, mu_2, rho_0_2, plastic, explPlast, yield,   &
@@ -223,14 +221,17 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
                           kos_b,kos_t,kos_h,kos_g,kos_m,kos_q,kos_f,kos_alpha,kos_beta,kos_e,kos_sh, &
                           kos_b2,kos_t2,kos_h2,kos_g2,kos_m2,kos_q2,kos_f2,kos_alpha2,kos_beta2,kos_e2,kos_sh2, &
                           eta_det_ge,eta_det_ge_2,eta_det_gp,eta_det_gp_2,eta_det_gt,eta_det_gt_2, &
-                          diff_c_ge,diff_c_ge_2,diff_c_gp,diff_c_gp_2,diff_c_gt,diff_c_gt_2, &
-                          v0
+                          diff_c_ge,diff_c_ge_2,diff_c_gp,diff_c_gp_2,diff_c_gt,diff_c_gt_2,v0
+                          
     
     ioUnit = 11
     open(unit=ioUnit, file=trim(inputfile), form='FORMATTED')
     read(unit=ioUnit, NML=PROBINPUT)
     close(ioUnit)
 
+    nx = size(mesh,1); ny = size(mesh,2); nz = size(mesh,3)
+    CALL RANDOM_NUMBER(noise)
+    CALL RANDOM_NUMBER(noise2)
     ! Initialize mygfil
     call mygfil%init(                        decomp, &
                      .FALSE.,     .TRUE.,    .TRUE., &
@@ -379,7 +380,7 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
         ! shock_init = interface_init - 0.3_rkind  ! (10*thick) grid points away from the interface
         ! dum = half * ( one - erf( (x-shock_init)/(two*dx) ) )
 
-        u   = v0 !+ v0* (noise-0.5)*1d-6 !(u2-u1)*dum
+        u   = v0 + (noise-0.5)*1d-6 !(u2-u1)*dum
         v   = 0
         w   = zero
 
@@ -411,15 +412,15 @@ subroutine initfields(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fiel
 
         !mix%material(2)%g11 = mix%material(1)%g11
 
-        mix%material(1)%p  = p_amb ! + (noise-0.5)*1d-6   !66666dum + p1*(one-dum)
+        mix%material(1)%p  = p_amb ! + (noise-0.5)*1d-7   !66666dum + p1*(one-dum)
         mix%material(2)%p  = mix%material(1)%p
 
-        mix%material(1)%VF = minVF + (one-two*minVF)*tmp !+  (noise-0.5)*1d-7
+        mix%material(1)%VF = minVF + (one-two*minVF)*tmp ! +  (noise-0.5)*1d-5
         mix%material(2)%VF = one - mix%material(1)%VF
 
 
-        rho = rho_0*mix%material(1)%VF + rho_0_2*mix%material(2)%VF
-        mix%material(1)%Ys = mix%material(1)%VF * rho_0 / rho
+        rho = rho_0*mix%material(1)%VF + rho_0_2*mix%material(2)%VF ! + (noise-0.5)*1d-7
+        mix%material(1)%Ys = mix%material(1)%VF * rho_0 / rho !+ (noise2-0.5)*1d-5
         mix%material(2)%Ys = one - mix%material(1)%Ys ! Enforce sum to unity
 
 
@@ -490,7 +491,57 @@ subroutine get_sponge(decomp,dx,dy,dz,mesh,fields,mix,rhou,rhov,rhow,rhoe,sponge
     sponge = 0.0
 end subroutine
 
+subroutine initparam_restart(decomp,der,derStagg,interpMid,dx,dy,dz,inputfile,mesh,fields,mix,tstop,dt,tviz,periodicx,periodicy,periodicz,x_bc,y_bc,z_bc)
+    use kind_parameters,  only: rkind
+    use constants,        only: zero,third,half,twothird,one,two,seven,pi,eps
+    use SolidGrid,        only: u_index,v_index,w_index,rho_index, uref_index
+    use decomp_2d,        only: decomp_info, nrank
+    use exits,            only: GracefulExit
+    use StiffGasEOS,      only: stiffgas
+    use Sep1SolidEOS,     only: sep1solid
+    use SolidMixtureMod,  only: solid_mixture
+    use operators,        only: grady,divergenceFV,interpolateFV,interpolateFV_x,interpolateFV_y,interpolateFV_z,gradFV_x,gradFV_y,gradFV_z
+    use DerivativesMod,   only: derivatives
+    use DerivativesStaggeredMod, only: derivativesStagg
+    use InterpolatorsMod,        only: interpolators
+    use reductions,       only: P_SUM, P_MEAN, P_MAXVAL, P_MINVAL
+    use ShearLayerComp_data
 
+    implicit none
+    character(len=*),                intent(in)    :: inputfile
+    type(decomp_info),               intent(in)    :: decomp
+    type(derivatives),               intent(in)    :: der
+    type(derivativesStagg),          intent(in)    :: derStagg
+    type(interpolators),             intent(in)    :: interpMid
+    real(rkind),                     intent(in)    :: dx,dy,dz
+    real(rkind), dimension(:,:,:,:), intent(in)    :: mesh
+    type(solid_mixture),             intent(inout) :: mix
+    real(rkind),                     intent(inout) :: tstop, dt, tviz
+    real(rkind), dimension(:,:,:,:), intent(inout) :: fields
+    integer, dimension(2), optional, intent(in) :: x_bc, y_bc, z_bc
+
+    logical :: periodicx,periodicy,periodicz
+    
+    integer :: ioUnit,i,iy
+    real(rkind), dimension(8) :: fparams
+    real(rkind), dimension(4) :: alphai, phase
+    real(rkind), dimension(decomp%ysz(1),decomp%ysz(2),decomp%ysz(3)) :: tmp,dum, eta, eta2, yphys, u_perturb, KE
+    real(rkind) :: fac, Lr, STRETCH_RATIO = 5.0, int_KE
+    integer, dimension(2) :: iparams
+    real(rkind) :: a0, a0_2,dx1
+    logical :: adjustRgas = .TRUE.   ! If true, Rgas is used, Rgas2 adjusted toensure p-T equilibrium
+    logical :: adjustPamb = .FALSE.   ! If true, p_amb is adjusted to ensure p-T equilibrium
+
+    integer :: nx,ny,nz,k,ix,j
+    integer :: ierr, rank,fh, filesize, chunksize, offset, offset2,totalproc
+    integer, allocatable :: data(:), recvbuf(:)
+    character(len=50) :: filename,phiIname,phiRname, DphiIname, DphiRname
+    character(len=50) :: rhoRname, rhoIname, pIname,pRname
+    !nteger(kind=MPI_OFFSET_KIND) :: disp
+    !nteger(kind=MPI_STATUS_SIZE) :: status(MPI_STATUS_SIZE)
+    logical :: flag
+
+end
 subroutine hook_output(decomp,der,dx,dy,dz,outputdir,mesh,fields,mix,tsim,vizcount,x_bc,y_bc,z_bc)
     use kind_parameters,  only: rkind,clen
     use constants,        only: zero,eps,half,one,two,pi,four,eight

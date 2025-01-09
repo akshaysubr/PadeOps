@@ -57,7 +57,7 @@ module sgrid_hooks
             real(rkind),                     intent(in)    :: dx, dy, dz
             character(len=*),                intent(in)    :: inputfile
             real(rkind), dimension(:,:,:,:), intent(in)    :: mesh
-            real(rkind), dimension(:,:,:,:), intent(inout) :: fields
+            real(rkind), dimension(:,:,:),   intent(inout) :: fields
             type(solid_mixture),             intent(inout) :: mix
             real(rkind),                     intent(inout) :: tstop, dt, tviz
             integer, dimension(2), optional, intent(in) :: x_bc, y_bc, z_bc
